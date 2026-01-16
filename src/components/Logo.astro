@@ -1,0 +1,52 @@
+---
+interface Props {
+    className?: string;
+}
+
+const { className = "h-10 w-10" } = Astro.props;
+---
+
+<svg
+    viewBox="0 0 100 100"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    class={className}
+>
+    <!-- Main Shield/Base -->
+    <path
+        d="M20 20H80V60C80 71.0457 71.0457 80 60 80H40C28.9543 80 20 71.0457 20 60V20Z"
+        fill="white"></path>
+
+    <!-- J and M stylized -->
+    <path
+        d="M35 30V55C35 60.5228 39.4772 65 45 65"
+        stroke="#0369A1"
+        stroke-width="8"
+        stroke-linecap="round"></path>
+    <path
+        d="M55 65V35L67.5 50L80 35V65"
+        stroke="#0369A1"
+        stroke-width="8"
+        stroke-linecap="round"
+        stroke-linejoin="round"></path>
+
+    <!-- Wave Effect -->
+    <path
+        d="M10 50C25 40 35 60 50 50C65 40 75 60 90 50"
+        stroke="#22D3EE"
+        stroke-width="6"
+        stroke-linecap="round"
+        opacity="0.8"></path>
+
+    <!-- Sparkle -->
+    <path
+        d="M85 20L87 25L92 27L87 29L85 34L83 29L78 27L83 25L85 20Z"
+        fill="#38BDF8"
+    >
+        <animate
+            attributeName="opacity"
+            values="0.5;1;0.5"
+            dur="2s"
+            repeatCount="indefinite"></animate>
+    </path>
+</svg>

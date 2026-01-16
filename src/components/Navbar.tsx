@@ -1,7 +1,7 @@
 import * as React from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
-import { Waves, Menu, X } from "lucide-react"
+import { Menu, X } from "lucide-react"
 
 export default function Navbar() {
     const [isOpen, setIsOpen] = React.useState(false)
@@ -18,7 +18,7 @@ export default function Navbar() {
             <div className="container mx-auto px-6 md:px-12 flex h-20 items-center justify-between">
                 {/* Left: Logo */}
                 <div className="flex flex-1 items-center justify-start gap-2">
-                    <Waves className="h-7 w-7 text-primary" />
+                    <img src="/logoJyM.png" alt="JyM Logo" className="h-16 w-16 object-contain" />
                     <span className="text-xl font-bold tracking-tight whitespace-nowrap">JyM mantenimientos</span>
                 </div>
 

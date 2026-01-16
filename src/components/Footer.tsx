@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Waves } from "lucide-react"
+
 
 export default function Footer() {
     return (
@@ -8,7 +8,7 @@ export default function Footer() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-12 text-center md:text-left">
                     <div>
                         <div className="flex items-center justify-center md:justify-start gap-2 mb-4">
-                            <Waves className="h-6 w-6 text-primary" />
+                            <img src="/logoJyM.png" alt="JyM Logo" className="h-12 w-12 object-contain" />
                             <span className="text-xl font-bold">JyM mantenimientos</span>
                         </div>
                         <p className="text-sm text-muted-foreground">
