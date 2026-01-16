@@ -6,13 +6,13 @@ import Benefits from "../components/Benefits";
 import Services from "../components/Services";
 import Testimonials from "../components/Testimonials";
 import FeaturedReels from "@/components/FeaturedReels";
-import { getLatestReels } from "@/lib/instagram";
+import { getLatestFacebookReels } from "@/lib/social";
 import FAQ from "@/components/FAQ";
 import ContactForm from "@/components/ContactForm";
 import Footer from "@/components/Footer";
 import "@/styles/global.css";
 
-const reels = await getLatestReels(4);
+const reels = await getLatestFacebookReels(4);
 ---
 
 <Layout title="JyM mantenimientos | Mantenimiento Profesional de Piscinas">

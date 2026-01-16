@@ -1,47 +1,45 @@
 import * as React from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
-import { Play, Instagram } from "lucide-react"
+import { Play, Facebook } from "lucide-react"
 
-interface InstagramMedia {
+interface FacebookVideo {
     id: string;
-    caption?: string;
-    media_type: string;
-    media_url: string;
-    permalink: string;
-    thumbnail_url?: string;
+    description?: string;
+    permalink_url: string;
+    picture: string;
 }
 
 interface FeaturedReelsProps {
-    initialReels: InstagramMedia[];
+    initialReels: FacebookVideo[];
 }
 
 export default function FeaturedReels({ initialReels }: FeaturedReelsProps) {
-    // Use initialReels if provided, otherwise fallback to placeholders for design preview
+    // Use initialReels if provided, otherwise fallback to placeholders
     const displayReels = initialReels && initialReels.length > 0 ? initialReels : [
         {
             id: "1",
-            caption: "Limpieza Profunda",
-            media_url: "https://images.unsplash.com/photo-1572331165267-854da2b10ccc?q=80&w=500&auto=format&fit=crop",
-            permalink: "https://instagram.com",
+            description: "Limpieza Profunda",
+            picture: "https://images.unsplash.com/photo-1572331165267-854da2b10ccc?q=80&w=500&auto=format&fit=crop",
+            permalink_url: "https://facebook.com",
         },
         {
             id: "2",
-            caption: "Balance Químico",
-            media_url: "https://images.unsplash.com/photo-1584622781564-1d9876a13d00?q=80&w=500&auto=format&fit=crop",
-            permalink: "https://instagram.com",
+            description: "Balance Químico",
+            picture: "https://images.unsplash.com/photo-1584622781564-1d9876a13d00?q=80&w=500&auto=format&fit=crop",
+            permalink_url: "https://facebook.com",
         },
         {
             id: "3",
-            caption: "Antes y Después",
-            media_url: "https://images.unsplash.com/photo-1562092663-99defc4a9930?q=80&w=500&auto=format&fit=crop",
-            permalink: "https://instagram.com",
+            description: "Antes y Después",
+            picture: "https://images.unsplash.com/photo-1562092663-99defc4a9930?q=80&w=500&auto=format&fit=crop",
+            permalink_url: "https://facebook.com",
         },
         {
             id: "4",
-            caption: "Mantenimiento Airbnb",
-            media_url: "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=500&auto=format&fit=crop",
-            permalink: "https://instagram.com",
+            description: "Mantenimiento Airbnb",
+            picture: "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=500&auto=format&fit=crop",
+            permalink_url: "https://facebook.com",
         },
     ];
 
@@ -55,7 +53,7 @@ export default function FeaturedReels({ initialReels }: FeaturedReelsProps) {
                         viewport={{ once: true }}
                         className="inline-flex items-center rounded-full border bg-primary/5 px-3 py-1 text-sm font-medium mb-4"
                     >
-                        <span className="text-primary font-bold">Live Content</span>
+                        <span className="text-primary font-bold">Facebook Showcase</span>
                     </motion.div>
                     <motion.h2
                         initial={{ opacity: 0, y: 20 }}
@@ -64,7 +62,7 @@ export default function FeaturedReels({ initialReels }: FeaturedReelsProps) {
                         transition={{ delay: 0.1 }}
                         className="text-3xl font-bold tracking-tight sm:text-5xl"
                     >
-                        Nuestros <span className="text-primary italic">Reels</span> Destacados
+                        Nuestros <span className="text-primary italic">Reels</span> en Facebook
                     </motion.h2>
                     <motion.p
                         initial={{ opacity: 0, y: 20 }}
@@ -73,7 +71,7 @@ export default function FeaturedReels({ initialReels }: FeaturedReelsProps) {
                         transition={{ delay: 0.2 }}
                         className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto"
                     >
-                        Sintoniza nuestro trabajo diario. Esta sección se actualiza automáticamente con nuestras últimas publicaciones.
+                        Mira nuestro contenido más reciente directamente desde nuestra página de Facebook.
                     </motion.p>
                 </div>
 
@@ -81,7 +79,7 @@ export default function FeaturedReels({ initialReels }: FeaturedReelsProps) {
                     {displayReels.map((reel: any, index: number) => (
                         <motion.a
                             key={reel.id}
-                            href={reel.permalink}
+                            href={reel.permalink_url}
                             target="_blank"
                             rel="noopener noreferrer"
                             initial={{ opacity: 0, scale: 0.9, y: 30 }}
@@ -91,8 +89,8 @@ export default function FeaturedReels({ initialReels }: FeaturedReelsProps) {
                             className="group relative aspect-[9/16] rounded-3xl overflow-hidden bg-muted shadow-xl border-4 border-background cursor-pointer"
                         >
                             <img
-                                src={reel.thumbnail_url || reel.media_url}
-                                alt={reel.caption || "Instagram Reel"}
+                                src={reel.picture}
+                                alt={reel.description || "Facebook Reel"}
                                 className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 transition-opacity group-hover:opacity-80" />
@@ -107,16 +105,16 @@ export default function FeaturedReels({ initialReels }: FeaturedReelsProps) {
                                 </motion.div>
                             </div>
 
-                            {reel.caption && (
+                            {reel.description && (
                                 <div className="absolute bottom-6 left-6 right-6">
                                     <p className="text-white font-bold text-sm leading-tight uppercase tracking-wider drop-shadow-md line-clamp-2">
-                                        {reel.caption}
+                                        {reel.description}
                                     </p>
                                 </div>
                             )}
 
                             <div className="absolute top-4 right-4 h-8 w-8 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center">
-                                <Instagram className="h-4 w-4 text-white" />
+                                <Facebook className="h-4 w-4 text-white" />
                             </div>
                         </motion.a>
                     ))}
@@ -124,9 +122,9 @@ export default function FeaturedReels({ initialReels }: FeaturedReelsProps) {
 
                 <div className="mt-16 text-center">
                     <Button variant="outline" size="lg" className="rounded-full px-12 group transition-all hover:bg-primary hover:text-white" asChild>
-                        <a href="https://www.instagram.com/jymmantenimientos" target="_blank" rel="noopener noreferrer">
-                            Seguir en Instagram
-                            <Instagram className="ml-2 h-4 w-4 transition-transform group-hover:scale-110" />
+                        <a href="https://facebook.com/jymmantenimientos" target="_blank" rel="noopener noreferrer">
+                            Ver más en Facebook
+                            <Facebook className="ml-2 h-4 w-4 transition-transform group-hover:scale-110" />
                         </a>
                     </Button>
                 </div>
