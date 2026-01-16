@@ -8,6 +8,7 @@ import Testimonials from "../components/Testimonials";
 import FeaturedReels from "@/components/FeaturedReels";
 import { getLatestFacebookReels } from "@/lib/social";
 import FAQ from "@/components/FAQ";
+import Plans from "@/components/Plans";
 import ContactForm from "@/components/ContactForm";
 import Footer from "@/components/Footer";
 import "@/styles/global.css";
@@ -21,6 +22,7 @@ const reels = await getLatestFacebookReels(4);
 		<Hero client:load />
 		<Benefits client:load />
 		<Services client:load />
+		<Plans client:load />
 		<FeaturedReels client:load initialReels={reels} />
 		<Testimonials client:load />
 		<FAQ client:load />
