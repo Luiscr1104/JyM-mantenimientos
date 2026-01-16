@@ -1,0 +1,25 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Navbar from "../components/Navbar";
+import Hero from "../components/Hero";
+import Benefits from "../components/Benefits";
+import Services from "../components/Services";
+import Testimonials from "../components/Testimonials";
+import FAQ from "../components/FAQ";
+import ContactForm from "../components/ContactForm";
+import Footer from "../components/Footer";
+import "@/styles/global.css";
+---
+
+<Layout title="JyM mantenimientos | Mantenimiento Profesional de Piscinas">
+	<Navbar client:load />
+	<main>
+		<Hero client:load />
+		<Benefits client:load />
+		<Services client:load />
+		<Testimonials client:load />
+		<FAQ client:load />
+		<ContactForm client:load />
+	</main>
+	<Footer />
+</Layout>

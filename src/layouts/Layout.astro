@@ -1,0 +1,109 @@
+---
+import "@/styles/global.css";
+
+interface Props {
+    title: string;
+    description?: string;
+}
+
+const {
+    title,
+    description = "Mantenimiento profesional de piscinas en La Fortuna y San Carlos. Especialistas en casas de Airbnb y alquiler vacacional. Agua cristalina garantizada.",
+} = Astro.props;
+
+const siteUrl = "https://jymmantenimientos.com";
+const schemaData = {
+    "@context": "https://schema.org",
+    "@type": "LocalBusiness",
+    name: "JyM mantenimientos",
+    image: "https://jymmantenimientos.com/og-image.jpg",
+    "@id": "https://jymmantenimientos.com",
+    url: "https://jymmantenimientos.com",
+    telephone: "+506-7102-9497",
+    address: {
+        "@type": "PostalAddress",
+        streetAddress: "La Fortuna de San Carlos",
+        addressLocality: "La Fortuna",
+        addressRegion: "Alajuela",
+        addressCountry: "CR",
+    },
+    geo: {
+        "@type": "GeoCoordinates",
+        latitude: 10.4709,
+        longitude: -84.6453,
+    },
+    openingHoursSpecification: {
+        "@type": "OpeningHoursSpecification",
+        dayOfWeek: [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+        ],
+        opens: "07:00",
+        closes: "17:00",
+    },
+    sameAs: [
+        "https://facebook.com/jymmantenimientos",
+        "https://instagram.com/jymmantenimientos",
+    ],
+};
+---
+
+<!doctype html>
+<html lang="es" class="scroll-smooth">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width" />
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <meta name="generator" content={Astro.generator} />
+
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <meta
+            name="keywords"
+            content="mantenimiento de piscinas, La Fortuna, San Carlos, Airbnb, limpieza de piscinas, Costa Rica, mantenimiento vacacional"
+        />
+
+        <!-- Open Graph / Facebook -->
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={siteUrl} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <meta property="og:image" content={`${siteUrl}/og-image.jpg`} />
+
+        <!-- Twitter -->
+        <meta property="twitter:card" content="summary_large_image" />
+        <meta property="twitter:url" content={siteUrl} />
+        <meta property="twitter:title" content={title} />
+        <meta property="twitter:description" content={description} />
+        <meta property="twitter:image" content={`${siteUrl}/og-image.jpg`} />
+
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+            rel="stylesheet"
+        />
+
+        <script
+            type="application/ld+json"
+            is:inline
+            set:html={JSON.stringify(schemaData)}
+        />
+    </head>
+    <body class="min-h-screen bg-background font-sans antialiased">
+        <slot />
+    </body>
+</html>
+
+<style is:global>
+    :root {
+        --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+    }
+    body {
+        font-family: var(--font-sans);
+    }
+</style>

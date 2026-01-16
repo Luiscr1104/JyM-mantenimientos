@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://jymmantenimientos.com/sitemap-index.xml
