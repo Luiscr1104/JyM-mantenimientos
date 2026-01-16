@@ -5,11 +5,14 @@ import Hero from "../components/Hero";
 import Benefits from "../components/Benefits";
 import Services from "../components/Services";
 import Testimonials from "../components/Testimonials";
-import FeaturedReels from "../components/FeaturedReels";
-import FAQ from "../components/FAQ";
-import ContactForm from "../components/ContactForm";
-import Footer from "../components/Footer";
+import FeaturedReels from "@/components/FeaturedReels";
+import { getLatestReels } from "@/lib/instagram";
+import FAQ from "@/components/FAQ";
+import ContactForm from "@/components/ContactForm";
+import Footer from "@/components/Footer";
 import "@/styles/global.css";
+
+const reels = await getLatestReels(4);
 ---
 
 <Layout title="JyM mantenimientos | Mantenimiento Profesional de Piscinas">
@@ -18,7 +21,7 @@ import "@/styles/global.css";
 		<Hero client:load />
 		<Benefits client:load />
 		<Services client:load />
-		<FeaturedReels client:load />
+		<FeaturedReels client:load initialReels={reels} />
 		<Testimonials client:load />
 		<FAQ client:load />
 		<ContactForm client:load />
