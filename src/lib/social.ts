@@ -26,8 +26,13 @@ export async function getLatestFacebookReels(limit: number = 4): Promise<Faceboo
             return [];
         }
 
-        // Return the latest videos/reels
-        return data.data.slice(0, limit);
+        // Return the latest videos/reels, ensuring permalink_url is absolute
+        return data.data.map((video: any) => ({
+            ...video,
+            permalink_url: video.permalink_url.startsWith("http")
+                ? video.permalink_url
+                : `https://www.facebook.com${video.permalink_url}`
+        })).slice(0, limit);
     } catch (error) {
         console.error("Error fetching Facebook videos:", error);
         return [];
