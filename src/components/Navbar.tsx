@@ -9,6 +9,7 @@ export default function Navbar() {
     const navLinks = [
         { href: "#services", label: "Servicios" },
         { href: "#plans", label: "Planes" },
+        { href: "/blog", label: "Blog" },
         { href: "#about", label: "Nosotros" },
         { href: "#testimonials", label: "Testimonios" },
         { href: "#contact", label: "Contacto" },
@@ -16,15 +17,15 @@ export default function Navbar() {
 
     return (
         <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="container mx-auto px-6 md:px-12 flex h-20 items-center justify-between">
+            <div className="container mx-auto px-4 md:px-8 lg:px-12 flex h-20 items-center justify-between">
                 {/* Left: Logo */}
-                <div className="flex flex-1 items-center justify-start gap-2">
-                    <img src="/logoJyM.png" alt="JyM Logo" className="h-16 w-16 object-contain" />
-                    <span className="text-xl font-bold tracking-tight whitespace-nowrap">JyM mantenimientos</span>
-                </div>
+                <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                    <img src="/logoJyM.png" alt="JyM Logo" className="h-12 w-12 md:h-16 md:w-16 object-contain" />
+                    <span className="text-lg md:text-xl font-bold tracking-tight whitespace-nowrap">JyM mantenimientos</span>
+                </a>
 
                 {/* Center: Desktop Navigation */}
-                <nav className="hidden md:flex flex-1 items-center justify-center gap-8 text-sm font-semibold">
+                <nav className="hidden md:flex flex-1 items-center justify-center gap-4 lg:gap-8 text-sm font-semibold">
                     {navLinks.map((link) => (
                         <a key={link.href} href={link.href} className="transition-colors hover:text-primary relative group">
                             {link.label}
@@ -34,7 +35,7 @@ export default function Navbar() {
                 </nav>
 
                 {/* Right: CTA & Mobile Toggle */}
-                <div className="flex flex-1 items-center justify-end gap-4">
+                <div className="flex flex-1 items-center justify-end gap-2 md:gap-4">
                     <div className="hidden md:block">
                         <Button variant="default" size="sm" className="rounded-full px-6 transition-all hover:scale-105 active:scale-95" asChild>
                             <a href="#contact">Solicitar Presupuesto</a>

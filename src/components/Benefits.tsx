@@ -32,7 +32,7 @@ const benefits = [
 
 export default function Benefits() {
     return (
-        <section className="py-24 bg-background overflow-hidden">
+        <section className="py-24 overflow-hidden">
             <div className="container mx-auto px-6">
                 <div className="text-center mb-16">
                     <motion.h2

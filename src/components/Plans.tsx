@@ -41,7 +41,7 @@ const plans = [
 
 export default function Plans() {
     return (
-        <section id="plans" className="py-24 bg-background">
+        <section id="plans" className="py-24">
             <div className="container mx-auto px-6">
                 <div className="text-center mb-16">
                     <motion.h2
@@ -74,8 +74,8 @@ export default function Plans() {
                             className="flex"
                         >
                             <Card className={`flex flex-col w-full relative overflow-hidden transition-all hover:shadow-2xl ${plan.highlight
-                                    ? "border-primary shadow-xl scale-105 border-2"
-                                    : "border-border hover:-translate-y-1"
+                                ? "border-primary shadow-xl scale-105 border-2"
+                                : "border-border hover:-translate-y-1"
                                 }`}>
                                 {plan.highlight && (
                                     <div className="absolute top-0 right-0 p-4">

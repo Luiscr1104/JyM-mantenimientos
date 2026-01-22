@@ -4,22 +4,29 @@ import "@/styles/global.css";
 interface Props {
     title: string;
     description?: string;
+    canonical?: string;
 }
 
 const {
     title,
     description = "Mantenimiento profesional de piscinas en La Fortuna y San Carlos. Especialistas en casas de Airbnb y alquiler vacacional. Agua cristalina garantizada.",
+    canonical,
 } = Astro.props;
 
 const siteUrl = "https://jymmantenimientos.com";
+const canonicalURL = canonical || Astro.url.pathname;
+
 const schemaData = {
     "@context": "https://schema.org",
-    "@type": "LocalBusiness",
-    name: "JyM mantenimientos",
+    "@type": "PoolService",
+    name: "JyM Mantenimientos",
+    description:
+        "Expertos en mantenimiento de piscinas para Airbnb y casas vacacionales en La Fortuna y San Carlos. Agua cristalina garantizada.",
     image: "https://jymmantenimientos.com/og-image.jpg",
     "@id": "https://jymmantenimientos.com",
     url: "https://jymmantenimientos.com",
     telephone: "+506-7102-9497",
+    priceRange: "$$",
     address: {
         "@type": "PostalAddress",
         streetAddress: "La Fortuna de San Carlos",
@@ -32,6 +39,18 @@ const schemaData = {
         latitude: 10.4709,
         longitude: -84.6453,
     },
+    areaServed: [
+        {
+            "@type": "City",
+            name: "La Fortuna",
+            "@id": "https://www.wikidata.org/wiki/Q1017891",
+        },
+        {
+            "@type": "City",
+            name: "San Carlos",
+            "@id": "https://www.wikidata.org/wiki/Q1018162",
+        },
+    ],
     openingHoursSpecification: {
         "@type": "OpeningHoursSpecification",
         dayOfWeek: [
@@ -44,6 +63,48 @@ const schemaData = {
         ],
         opens: "07:00",
         closes: "17:00",
+    },
+    hasOfferCatalog: {
+        "@type": "OfferCatalog",
+        name: "Servicios de Mantenimiento de Piscinas",
+        itemListElement: [
+            {
+                "@type": "Offer",
+                itemOffered: {
+                    "@type": "Service",
+                    name: "Mantenimiento Preventivo de Piscinas",
+                    description:
+                        "Servicio regular de mantenimiento para mantener tu piscina en perfecto estado",
+                },
+            },
+            {
+                "@type": "Offer",
+                itemOffered: {
+                    "@type": "Service",
+                    name: "Tratamiento de Agua Verde",
+                    description:
+                        "Recuperación de piscinas con problemas de algas y agua turbia",
+                },
+            },
+            {
+                "@type": "Offer",
+                itemOffered: {
+                    "@type": "Service",
+                    name: "Limpieza Profunda",
+                    description:
+                        "Limpieza completa de piscinas incluyendo paredes, fondo y filtros",
+                },
+            },
+            {
+                "@type": "Offer",
+                itemOffered: {
+                    "@type": "Service",
+                    name: "Mantenimiento para Airbnb",
+                    description:
+                        "Servicio especializado para propiedades vacacionales y casas de alquiler",
+                },
+            },
+        ],
     },
     sameAs: [
         "https://facebook.com/jymmantenimientos",
@@ -66,9 +127,11 @@ const schemaData = {
             name="keywords"
             content="mantenimiento de piscinas, La Fortuna, San Carlos, Airbnb, limpieza de piscinas, Costa Rica, mantenimiento vacacional"
         />
+        <link rel="canonical" href={`${siteUrl}${canonicalURL}`} />
 
         <!-- Open Graph / Facebook -->
         <meta property="og:type" content="website" />
+        <meta property="og:locale" content="es_CR" />
         <meta property="og:url" content={siteUrl} />
         <meta property="og:title" content={title} />
         <meta property="og:description" content={description} />
@@ -96,10 +159,10 @@ const schemaData = {
     </head>
     <body class="min-h-screen bg-background font-sans antialiased relative">
         <div
-            class="absolute inset-0 -z-10 h-full w-full bg-white bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear-gradient(to_bottom,#f0f0f0_1px,transparent_1px)] bg-[size:6rem_4rem]"
+            class="absolute inset-0 -z-10 h-full w-full bg-gradient-to-br from-sky-50 via-blue-50 to-white bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear-gradient(to_bottom,#f0f0f0_1px,transparent_1px)] bg-[size:6rem_4rem]"
         >
             <div
-                class="absolute bottom-0 left-0 right-0 top-0 bg-[radial-gradient(circle_800px_at_50%_400px,#C9EBFF,transparent)]"
+                class="absolute bottom-0 left-0 right-0 top-0 bg-[radial-gradient(circle_1200px_at_50%_300px,rgba(201,235,255,0.4),transparent)]"
             >
             </div>
         </div>

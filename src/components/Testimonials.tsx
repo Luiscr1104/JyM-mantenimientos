@@ -23,7 +23,7 @@ const testimonials = [
 
 export default function Testimonials() {
     return (
-        <section id="testimonials" className="py-32 bg-background relative overflow-hidden">
+        <section id="testimonials" className="py-32 relative overflow-hidden">
             <div className="container mx-auto px-6 text-center relative z-10">
                 <motion.h2
                     initial={{ opacity: 0, y: 20 }}

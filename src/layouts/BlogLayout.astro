@@ -1,0 +1,188 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+import "@/styles/global.css";
+
+interface Props {
+    title: string;
+    description: string;
+    pubDate: Date;
+    author: string;
+    image?: string;
+}
+
+const { title, description, pubDate, author, image } = Astro.props;
+
+const articleSchema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: title,
+    description: description,
+    datePublished: pubDate.toISOString(),
+    author: {
+        "@type": "Organization",
+        name: author,
+    },
+    publisher: {
+        "@type": "Organization",
+        name: "JyM Mantenimientos",
+        logo: {
+            "@type": "ImageObject",
+            url: "https://jymmantenimientos.com/logoJyM.png",
+        },
+    },
+    image: image || "https://jymmantenimientos.com/og-image.jpg",
+};
+---
+
+<Layout title={`${title} | JyM Mantenimientos`} description={description}>
+    <Navbar client:load />
+    <main class="min-h-screen">
+        <!-- Breadcrumb Navigation -->
+        <nav
+            class="container mx-auto px-4 md:px-8 lg:px-12 py-6"
+            aria-label="Breadcrumb"
+        >
+            <ol class="flex items-center gap-2 text-sm text-muted-foreground">
+                <li>
+                    <a href="/" class="hover:text-primary transition-colors"
+                        >Inicio</a>
+                </li>
+                <li>/</li>
+                <li>
+                    <a href="/blog" class="hover:text-primary transition-colors"
+                        >Blog</a>
+                </li>
+                <li>/</li>
+                <li class="text-foreground font-medium">{title}</li>
+            </ol>
+        </nav>
+
+        <!-- Article Header -->
+        <article
+            class="container mx-auto px-4 md:px-8 lg:px-12 py-12 max-w-4xl"
+        >
+            <header class="mb-12 text-center">
+                <h1
+                    class="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6"
+                >
+                    {title}
+                </h1>
+                <p class="text-xl text-muted-foreground mb-6">
+                    {description}
+                </p>
+                <div
+                    class="flex items-center justify-center gap-4 text-sm text-muted-foreground"
+                >
+                    <time datetime={pubDate.toISOString()}>
+                        {
+                            pubDate.toLocaleDateString("es-CR", {
+                                year: "numeric",
+                                month: "long",
+                                day: "numeric",
+                            })
+                        }
+                    </time>
+                    <span>•</span>
+                    <span>{author}</span>
+                </div>
+            </header>
+
+            {
+                image && (
+                    <div class="mb-12 rounded-2xl overflow-hidden">
+                        <img
+                            src={image}
+                            alt={title}
+                            class="w-full h-auto object-cover"
+                        />
+                    </div>
+                )
+            }
+
+            <!-- Article Content -->
+            <div
+                class="prose prose-lg prose-slate max-w-none
+                prose-headings:font-bold prose-headings:tracking-tight
+                prose-h2:text-3xl prose-h2:mt-12 prose-h2:mb-6
+                prose-h3:text-2xl prose-h3:mt-8 prose-h3:mb-4
+                prose-p:text-foreground prose-p:leading-relaxed
+                prose-a:text-primary prose-a:no-underline hover:prose-a:underline
+                prose-strong:text-foreground prose-strong:font-semibold
+                prose-ul:my-6 prose-li:my-2
+                prose-img:rounded-xl prose-img:shadow-lg"
+            >
+                <slot />
+            </div>
+
+            <!-- Call to Action -->
+            <div
+                class="mt-16 p-8 bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl border border-primary/20"
+            >
+                <h3 class="text-2xl font-bold mb-4">
+                    ¿Necesitas ayuda con tu piscina?
+                </h3>
+                <p class="text-muted-foreground mb-6">
+                    Nuestro equipo de expertos está listo para mantener tu
+                    piscina en perfecto estado. Especialistas en propiedades de
+                    Airbnb y alquiler vacacional.
+                </p>
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <a
+                        href="/#contact"
+                        class="inline-flex items-center justify-center px-6 py-3 bg-primary text-primary-foreground rounded-full font-semibold hover:scale-105 transition-transform"
+                    >
+                        Solicitar Presupuesto
+                    </a>
+                    <a
+                        href="https://wa.me/50671029497"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center justify-center px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-primary-foreground transition-colors"
+                    >
+                        WhatsApp
+                    </a>
+                </div>
+            </div>
+        </article>
+    </main>
+    <Footer />
+
+    <script
+        type="application/ld+json"
+        is:inline
+        set:html={JSON.stringify(articleSchema)}
+    />
+</Layout>
+
+<style is:global>
+    /* Enhanced typography for blog content */
+    .prose {
+        color: hsl(var(--foreground));
+    }
+
+    .prose h2 {
+        color: hsl(var(--foreground));
+        border-bottom: 2px solid hsl(var(--primary) / 0.2);
+        padding-bottom: 0.5rem;
+    }
+
+    .prose h3 {
+        color: hsl(var(--foreground));
+    }
+
+    .prose code {
+        background: hsl(var(--muted));
+        padding: 0.2rem 0.4rem;
+        border-radius: 0.25rem;
+        font-size: 0.9em;
+    }
+
+    .prose blockquote {
+        border-left: 4px solid hsl(var(--primary));
+        padding-left: 1.5rem;
+        font-style: italic;
+        color: hsl(var(--muted-foreground));
+    }
+</style>

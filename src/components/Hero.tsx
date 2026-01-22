@@ -5,7 +5,7 @@ import { ArrowRight, CheckCircle2 } from "lucide-react"
 
 export default function Hero() {
     return (
-        <section className="relative overflow-hidden bg-background pt-24 pb-20 sm:pt-32 sm:pb-32">
+        <section className="relative overflow-hidden pt-24 pb-20 sm:pt-32 sm:pb-32">
             <div className="container relative z-10 mx-auto px-6 lg:px-8">
                 <div className="grid grid-cols-1 gap-16 lg:grid-cols-2 lg:items-center">
                     <motion.div

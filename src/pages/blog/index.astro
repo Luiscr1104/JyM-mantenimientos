@@ -1,0 +1,220 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+import { getCollection, type CollectionEntry } from "astro:content";
+import "@/styles/global.css";
+
+const allBlogPosts = await getCollection("blog");
+type BlogPost = CollectionEntry<"blog">;
+const sortedPosts = allBlogPosts.sort(
+    (a: BlogPost, b: BlogPost) =>
+        b.data.pubDate.getTime() - a.data.pubDate.getTime(),
+);
+const featuredPost = sortedPosts[0];
+const otherPosts = sortedPosts.slice(1);
+---
+
+<Layout
+    title="Blog de Mantenimiento de Piscinas | JyM Mantenimientos"
+    description="Consejos profesionales sobre mantenimiento de piscinas para propiedades de Airbnb en La Fortuna y San Carlos. Guías, tips y mejores prácticas."
+    canonical="/blog"
+>
+    <Navbar client:load />
+    <main class="min-h-screen">
+        <!-- Hero Section -->
+        <section class="container mx-auto px-4 md:px-8 lg:px-12 py-16 md:py-24">
+            <div class="max-w-3xl mx-auto text-center">
+                <h1
+                    class="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6"
+                >
+                    Blog de Mantenimiento de Piscinas
+                </h1>
+                <p class="text-xl text-muted-foreground">
+                    Consejos profesionales y guías prácticas para mantener tu
+                    piscina en perfecto estado. Especializado en propiedades de
+                    Airbnb y alquiler vacacional en La Fortuna y San Carlos.
+                </p>
+            </div>
+        </section>
+
+        <!-- Featured Post -->
+        {
+            featuredPost && (
+                <section class="container mx-auto px-4 md:px-8 lg:px-12 pb-16">
+                    <div class="max-w-6xl mx-auto">
+                        <div class="bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl border border-primary/20 overflow-hidden">
+                            <div class="grid md:grid-cols-2 gap-8 p-8 md:p-12">
+                                <div class="flex flex-col justify-center">
+                                    <span class="inline-block px-3 py-1 bg-primary text-primary-foreground text-sm font-semibold rounded-full mb-4 w-fit">
+                                        Artículo Destacado
+                                    </span>
+                                    <h2 class="text-3xl md:text-4xl font-bold mb-4">
+                                        <a
+                                            href={`/blog/${featuredPost.slug}`}
+                                            class="hover:text-primary transition-colors"
+                                        >
+                                            {featuredPost.data.title}
+                                        </a>
+                                    </h2>
+                                    <p class="text-muted-foreground mb-6">
+                                        {featuredPost.data.description}
+                                    </p>
+                                    <div class="flex items-center gap-4 text-sm text-muted-foreground mb-6">
+                                        <time
+                                            datetime={featuredPost.data.pubDate.toISOString()}
+                                        >
+                                            {featuredPost.data.pubDate.toLocaleDateString(
+                                                "es-CR",
+                                                {
+                                                    year: "numeric",
+                                                    month: "long",
+                                                    day: "numeric",
+                                                },
+                                            )}
+                                        </time>
+                                    </div>
+                                    <a
+                                        href={`/blog/${featuredPost.slug}`}
+                                        class="inline-flex items-center justify-center px-6 py-3 bg-primary text-primary-foreground rounded-full font-semibold hover:scale-105 transition-transform w-fit"
+                                    >
+                                        Leer Artículo →
+                                    </a>
+                                </div>
+                                <div class="flex items-center justify-center">
+                                    <div class="w-full h-64 md:h-full min-h-[300px] bg-gradient-to-br from-primary/20 to-primary/10 rounded-xl flex items-center justify-center">
+                                        <svg
+                                            class="w-24 h-24 text-primary/40"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                stroke-width="2"
+                                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                            />
+                                        </svg>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            )
+        }
+
+        <!-- All Posts Grid -->
+        <section class="container mx-auto px-4 md:px-8 lg:px-12 pb-24">
+            <div class="max-w-6xl mx-auto">
+                <h2 class="text-3xl font-bold mb-8">Todos los Artículos</h2>
+                <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {
+                        otherPosts.map((post: BlogPost) => (
+                            <article class="group bg-card border rounded-xl overflow-hidden hover:shadow-lg transition-all hover:-translate-y-1">
+                                <div class="h-48 bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+                                    <svg
+                                        class="w-16 h-16 text-primary/40"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            stroke-width="2"
+                                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                        />
+                                    </svg>
+                                </div>
+                                <div class="p-6">
+                                    <div class="flex flex-wrap gap-2 mb-3">
+                                        {post.data.tags
+                                            .slice(0, 2)
+                                            .map((tag: string) => (
+                                                <span class="px-2 py-1 bg-primary/10 text-primary text-xs font-medium rounded">
+                                                    {tag}
+                                                </span>
+                                            ))}
+                                    </div>
+                                    <h3 class="text-xl font-bold mb-3 group-hover:text-primary transition-colors">
+                                        <a href={`/blog/${post.slug}`}>
+                                            {post.data.title}
+                                        </a>
+                                    </h3>
+                                    <p class="text-muted-foreground text-sm mb-4 line-clamp-3">
+                                        {post.data.description}
+                                    </p>
+                                    <div class="flex items-center justify-between">
+                                        <time
+                                            class="text-xs text-muted-foreground"
+                                            datetime={post.data.pubDate.toISOString()}
+                                        >
+                                            {post.data.pubDate.toLocaleDateString(
+                                                "es-CR",
+                                                {
+                                                    year: "numeric",
+                                                    month: "short",
+                                                    day: "numeric",
+                                                },
+                                            )}
+                                        </time>
+                                        <a
+                                            href={`/blog/${post.slug}`}
+                                            class="text-primary font-semibold text-sm hover:underline"
+                                        >
+                                            Leer más →
+                                        </a>
+                                    </div>
+                                </div>
+                            </article>
+                        ))
+                    }
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA Section -->
+        <section class="container mx-auto px-4 md:px-8 lg:px-12 pb-24">
+            <div
+                class="max-w-4xl mx-auto bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl border border-primary/20 p-8 md:p-12 text-center"
+            >
+                <h2 class="text-3xl md:text-4xl font-bold mb-4">
+                    ¿Necesitas Ayuda Profesional?
+                </h2>
+                <p class="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
+                    Estos artículos te ayudarán a entender el mantenimiento de
+                    piscinas, pero si prefieres dejar el trabajo en manos de
+                    expertos, estamos aquí para ayudarte.
+                </p>
+                <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                    <a
+                        href="/#contact"
+                        class="inline-flex items-center justify-center px-8 py-4 bg-primary text-primary-foreground rounded-full font-semibold hover:scale-105 transition-transform"
+                    >
+                        Solicitar Presupuesto
+                    </a>
+                    <a
+                        href="https://wa.me/50671029497"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center justify-center px-8 py-4 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-primary-foreground transition-colors"
+                    >
+                        WhatsApp
+                    </a>
+                </div>
+            </div>
+        </section>
+    </main>
+    <Footer />
+</Layout>
+
+<style>
+    .line-clamp-3 {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+</style>
