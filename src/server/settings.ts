@@ -1,4 +1,4 @@
-import { db, settings } from '@/db';
+import { db, routePlans, settings } from '@/db';
 import type { SettingsInput } from '@/lib/validation';
 
 const KEYS = {
@@ -31,6 +31,7 @@ export async function getSettings(): Promise<AppSettings> {
 }
 
 export async function saveSettings(input: SettingsInput): Promise<AppSettings> {
+    const previous = await getSettings();
     const entries: Array<[string, string]> = [
         [KEYS.companyName, input.companyName ?? ''],
         [KEYS.baseAddress, input.baseAddress ?? ''],
@@ -48,5 +49,9 @@ export async function saveSettings(input: SettingsInput): Promise<AppSettings> {
             });
     }
 
+    if (previous.baseLat !== (input.baseLat ?? null) ||
+        previous.baseLng !== (input.baseLng ?? null)) {
+        await db.delete(routePlans);
+    }
     return getSettings();
 }

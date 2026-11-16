@@ -1,5 +1,5 @@
-import { count, desc, eq } from 'drizzle-orm';
-import { clients, db, properties } from '@/db';
+import { asc, count, desc, eq } from 'drizzle-orm';
+import { clients, db, properties, routePlans, visits } from '@/db';
 import { nullIfEmpty, type PropertyInput } from '@/lib/validation';
 
 export async function listPropertiesByClient(clientId: string) {
@@ -8,6 +8,14 @@ export async function listPropertiesByClient(clientId: string) {
         .from(properties)
         .where(eq(properties.clientId, clientId))
         .orderBy(desc(properties.createdAt));
+}
+
+export async function listPropertiesWithClient() {
+    return db
+        .select({ property: properties, client: clients })
+        .from(properties)
+        .innerJoin(clients, eq(properties.clientId, clients.id))
+        .orderBy(asc(clients.name), asc(properties.alias));
 }
 
 export async function getProperty(id: string) {
@@ -49,6 +57,7 @@ export async function createProperty(input: PropertyInput) {
 }
 
 export async function updateProperty(id: string, input: PropertyInput) {
+    const current = await getProperty(id);
     const [row] = await db
         .update(properties)
         .set({
@@ -68,6 +77,13 @@ export async function updateProperty(id: string, input: PropertyInput) {
         .where(eq(properties.id, id))
         .returning();
 
+    if (row && current && (current.lat !== row.lat || current.lng !== row.lng)) {
+        const dates = await db.selectDistinct({ date: visits.scheduledFor })
+            .from(visits).where(eq(visits.propertyId, id));
+        for (const { date } of dates) {
+            await db.delete(routePlans).where(eq(routePlans.visitDate, date));
+        }
+    }
     return row ?? null;
 }
 

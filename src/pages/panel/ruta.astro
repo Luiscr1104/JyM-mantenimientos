@@ -1,0 +1,266 @@
+---
+import PanelLayout from '@/layouts/PanelLayout.astro';
+import PageHeader from '@/components/panel/PageHeader.astro';
+import DateNav from '@/components/panel/DateNav.astro';
+import RouteMap from '@/components/panel/RouteMap';
+import { getToday, isValidDate } from '@/lib/dates';
+import { formatDistance, formatDuration, visitStatusLabel, visitStatusStyle } from '@/lib/format';
+import { decodePolyline, googleMapsRouteUrl } from '@/lib/geo';
+import { getRoutePlan } from '@/server/routes';
+import { getSettings } from '@/server/settings';
+import { listVisitsByDate } from '@/server/visits';
+
+const dateParam = Astro.url.searchParams.get('date');
+const date = isValidDate(dateParam) ? dateParam : getToday();
+
+const [plan, dayVisits, settings] = await Promise.all([
+    getRoutePlan(date),
+    listVisitsByDate(date),
+    getSettings(),
+]);
+
+const error = Astro.url.searchParams.get('error');
+const ok = Astro.url.searchParams.get('ok');
+const hasBase = settings.baseLat != null && settings.baseLng != null;
+
+const pendingVisits = dayVisits.filter(
+    (row) => row.visit.status === 'scheduled' || row.visit.status === 'in_progress',
+);
+const completedVisits = dayVisits.filter((row) => row.visit.status === 'completed');
+const byVisitId = new Map(pendingVisits.map((row) => [row.visit.id, row]));
+const planVisitIds = new Set((plan?.stops ?? []).map((stop) => stop.visitId));
+
+const orderedFromPlan = (plan?.stops ?? [])
+    .map((stop) => byVisitId.get(stop.visitId))
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+const remaining = pendingVisits.filter((row) => !planVisitIds.has(row.visit.id));
+const ordered = [...orderedFromPlan, ...remaining];
+
+const mapStops = ordered
+    .filter((row) => row.property.lat != null && row.property.lng != null)
+    .map((row, index) => ({
+        order: index + 1,
+        lat: row.property.lat as number,
+        lng: row.property.lng as number,
+        label: row.property.alias,
+    }));
+
+const base =
+    hasBase && settings.baseLat != null && settings.baseLng != null
+        ? { lat: settings.baseLat, lng: settings.baseLng }
+        : null;
+const polyline = plan?.polyline
+    ? decodePolyline(plan.polyline)
+    : plan && base
+      ? [[base.lat, base.lng], ...mapStops.map((stop) => [stop.lat, stop.lng]), [base.lat, base.lng]] as Array<[number, number]>
+      : [];
+
+const mapsUrl = base && plan
+    ? googleMapsRouteUrl(
+          base,
+          (plan?.stops ?? []).map((stop) => ({ lat: stop.lat, lng: stop.lng })),
+      )
+    : null;
+---
+
+<PanelLayout title="Ruta">
+    <PageHeader title="Ruta del día" description="Paradas ordenadas por cercanía.">
+        <a
+            href={`/panel/agenda?date=${date}`}
+            class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+        >
+            Editar agenda
+        </a>
+    </PageHeader>
+
+    <DateNav date={date} basePath="/panel/ruta" />
+
+    {
+        ok === 'route' && (
+            <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                Ruta optimizada correctamente.
+            </div>
+        )
+    }
+    {
+        error && (
+            <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                {error}
+            </div>
+        )
+    }
+
+    {
+        dayVisits.length === 0 ? (
+            <div class="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+                <p class="text-3xl">🗺️</p>
+                <h2 class="mt-2 text-lg font-extrabold text-slate-900">No hay paradas este día</h2>
+                <p class="mx-auto mt-1 max-w-sm text-sm text-slate-500">
+                    Agrega visitas en la agenda y vuelve para optimizar el recorrido.
+                </p>
+                <a
+                    href={`/panel/agenda?date=${date}`}
+                    class="mt-5 inline-flex h-12 items-center justify-center rounded-xl bg-sky-700 px-5 text-sm font-bold text-white"
+                >
+                    Ir a la agenda
+                </a>
+            </div>
+        ) : (
+            <div class="space-y-4">
+                {pendingVisits.length === 0 && (
+                    <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm font-semibold text-emerald-800">
+                        Todas las visitas están completadas. No quedan paradas por recorrer.
+                    </div>
+                )}
+                <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-wide text-slate-400">
+                                {plan ? 'Ruta optimizada' : 'Sin optimizar'}
+                            </p>
+                            <p class="mt-1 text-2xl font-extrabold text-slate-900">
+                                {pendingVisits.length}{' '}
+                                {pendingVisits.length === 1 ? 'parada pendiente' : 'paradas pendientes'}
+                                {plan && (
+                                    <span class="ml-2 text-base font-semibold text-slate-500">
+                                        · {formatDistance(plan.distanceMeters)} ·{' '}
+                                        {formatDuration(plan.durationSeconds)}
+                                    </span>
+                                )}
+                            </p>
+                            {plan?.source === 'fallback' && (
+                                <p class="mt-1 text-xs font-semibold text-amber-700">
+                                    Orden y distancia estimados por cercanía. La línea del mapa no sigue carreteras.
+                                </p>
+                            )}
+                            {plan && pendingVisits.length > plan.stops.length && (
+                                <p class="mt-1 text-xs font-semibold text-amber-700">
+                                    {pendingVisits.length - plan.stops.length} parada(s) sin ubicación no se incluyen
+                                    en la distancia ni en la navegación completa.
+                                </p>
+                            )}
+                        </div>
+
+                        <div class="flex flex-wrap gap-2">
+                            {pendingVisits.length > 0 && <form method="POST" action="/api/panel/route/optimize">
+                                <input type="hidden" name="date" value={date} />
+                                <button
+                                    type="submit"
+                                    disabled={!hasBase}
+                                    class="inline-flex h-12 items-center justify-center rounded-xl bg-sky-700 px-5 text-sm font-bold text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {plan ? 'Recalcular ruta' : 'Optimizar ruta'}
+                                </button>
+                            </form>}
+
+                            {mapsUrl && (
+                                <a
+                                    href={mapsUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="inline-flex h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                                >
+                                    Abrir en Google Maps
+                                </a>
+                            )}
+                        </div>
+                    </div>
+
+                    {!hasBase && (
+                        <p class="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                            Configura la ubicación base en{' '}
+                            <a href="/panel/ajustes" class="underline">
+                                Ajustes
+                            </a>{' '}
+                            para optimizar.
+                        </p>
+                    )}
+                </section>
+
+                {pendingVisits.length > 0 && <section class="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+                    <RouteMap
+                        client:only="react"
+                        stops={mapStops}
+                        base={base}
+                        polyline={polyline}
+                        estimated={plan?.source === 'fallback'}
+                    />
+                </section>}
+
+                {pendingVisits.length > 0 && <section>
+                    <h2 class="mb-3 text-base font-extrabold text-slate-900">Orden de paradas</h2>
+                    <ol class="space-y-3">
+                        {ordered.map((row, index) => (
+                            <li class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                <div class="flex items-start gap-3">
+                                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-700 text-sm font-extrabold text-white">
+                                        {index + 1}
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <a
+                                                href={`/panel/propiedades/${row.property.id}`}
+                                                class="truncate text-base font-extrabold text-slate-900 hover:underline"
+                                            >
+                                                {row.property.alias}
+                                            </a>
+                                            <span
+                                                class:list={[
+                                                    'rounded-full border px-2 py-0.5 text-[11px] font-bold',
+                                                    visitStatusStyle(row.visit.status),
+                                                ]}
+                                            >
+                                                {visitStatusLabel(row.visit.status)}
+                                            </span>
+                                        </div>
+                                        <p class="mt-0.5 truncate text-sm text-slate-500">
+                                            {row.client.name} · {row.property.address}
+                                        </p>
+
+                                        <div class="mt-3 flex flex-wrap gap-2">
+                                            {row.property.lat != null &&
+                                            row.property.lng != null ? (
+                                                <a
+                                                    href={`https://www.google.com/maps/dir/?api=1&destination=${row.property.lat},${row.property.lng}&travelmode=driving`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    class="inline-flex h-9 items-center rounded-lg bg-sky-700 px-3 text-xs font-bold text-white transition hover:bg-sky-800"
+                                                >
+                                                    Navegar
+                                                </a>
+                                            ) : (
+                                                <a
+                                                    href={`/panel/propiedades/${row.property.id}/editar`}
+                                                    class="inline-flex h-9 items-center rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-800"
+                                                >
+                                                    Falta ubicación
+                                                </a>
+                                            )}
+
+                                            {row.property.gateCode && (
+                                                <span class="inline-flex h-9 items-center rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-600">
+                                                    Portón: {row.property.gateCode}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+                </section>}
+                {completedVisits.length > 0 && (
+                    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <h2 class="text-base font-extrabold text-slate-900">
+                            Visitas completadas ({completedVisits.length})
+                        </h2>
+                        <ul class="mt-3 space-y-2 text-sm text-slate-600">
+                            {completedVisits.map((row) => <li>{row.property.alias} · {row.client.name}</li>)}
+                        </ul>
+                    </section>
+                )}
+            </div>
+        )
+    }
+</PanelLayout>

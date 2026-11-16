@@ -1,189 +1,372 @@
 ---
 import PanelLayout from '@/layouts/PanelLayout.astro';
 import PageHeader from '@/components/panel/PageHeader.astro';
+import { formatLongDate, getToday } from '@/lib/dates';
+import {
+    formatDistance,
+    formatDuration,
+    formatRelative,
+    leadStatusLabel,
+    leadStatusStyle,
+    visitStatusLabel,
+    visitStatusStyle,
+} from '@/lib/format';
 import { countClients } from '@/server/clients';
+import { getRecentLeads, countNewLeads } from '@/server/leads';
 import { countProperties } from '@/server/properties';
-import { countNewLeads, getRecentLeads } from '@/server/leads';
-import { formatRelative, leadStatusLabel, leadStatusStyle } from '@/lib/format';
+import { getRoutePlan } from '@/server/routes';
+import { getSettings } from '@/server/settings';
+import { listVisitsByDate, suggestVisits } from '@/server/visits';
 
-const [activeClients, totalProperties, newLeads, recentLeads] = await Promise.all([
-    countClients('active'),
-    countProperties(),
-    countNewLeads(),
-    getRecentLeads(4),
-]);
+const today = getToday();
 
-const today = new Intl.DateTimeFormat('es-CR', {
-    timeZone: 'America/Costa_Rica',
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-}).format(new Date());
+const dayVisits = await listVisitsByDate(today);
+const routePlan = await getRoutePlan(today);
+const settings = await getSettings();
+const newLeads = await countNewLeads();
+const recentLeads = await getRecentLeads(3);
+const activeClients = await countClients('active');
+const totalProperties = await countProperties();
 
-const todayLabel = today.charAt(0).toUpperCase() + today.slice(1);
+const suggestions = dayVisits.length === 0 ? await suggestVisits(today) : [];
+const completed = dayVisits.filter((row) => row.visit.status === 'completed').length;
+const pending = dayVisits.filter((row) => row.visit.status === 'scheduled').length;
+const remaining = dayVisits.filter((row) => row.visit.status === 'scheduled' || row.visit.status === 'in_progress').length;
+const hasBase = settings.baseLat != null && settings.baseLng != null;
+
+const ok = Astro.url.searchParams.get('ok');
+const error = Astro.url.searchParams.get('error');
 
 const stats = [
-    {
-        label: 'Clientes activos',
-        value: activeClients,
-        href: '/panel/clientes',
-        hint: 'Ver clientes',
-    },
-    {
-        label: 'Propiedades',
-        value: totalProperties,
-        href: '/panel/clientes',
-        hint: 'Piscinas registradas',
-    },
-    {
-        label: 'Leads nuevos',
-        value: newLeads,
-        href: '/panel/leads',
-        hint: newLeads > 0 ? 'Requieren respuesta' : 'Todo al día',
-        highlight: newLeads > 0,
-    },
+    { label: 'Clientes', value: activeClients, href: '/panel/clientes' },
+    { label: 'Propiedades', value: totalProperties, href: '/panel/clientes' },
+    { label: 'Leads nuevos', value: newLeads, href: '/panel/leads' },
 ];
 ---
 
 <PanelLayout title="Hoy">
-    <PageHeader title="Hoy" description={todayLabel} />
+    <PageHeader title="Hoy" description={formatLongDate(today)}>
+        <a
+            href={`/panel/agenda?date=${today}`}
+            class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+        >
+            Ver agenda
+        </a>
+    </PageHeader>
 
-    <div class="space-y-6">
+    <div class="space-y-5">
+        {
+            ok === 'route' && (
+                <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                    Ruta optimizada.
+                </div>
+            )
+        }
+        {
+            error && (
+                <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                    {error}
+                </div>
+            )
+        }
+
+        <section class="rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-white p-5 shadow-sm sm:p-7">
+            {
+                dayVisits.length === 0 ? (
+                    suggestions.length > 0 ? (
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-wide text-sky-700">
+                                Sugerencia del día
+                            </p>
+                            <h2 class="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">
+                                Hay {suggestions.length}{' '}
+                                {suggestions.length === 1 ? 'visita' : 'visitas'} para hoy
+                            </h2>
+                            <p class="mt-1 text-sm text-slate-600">
+                                Según la frecuencia de cada propiedad. Confírmalas para armar la
+                                ruta.
+                            </p>
+
+                            <ul class="mt-4 space-y-1 text-sm text-slate-700">
+                                {suggestions.slice(0, 4).map((item) => (
+                                    <li class="flex items-center gap-2">
+                                        <span class="h-1.5 w-1.5 rounded-full bg-sky-600" />
+                                        <span class="font-semibold">{item.alias}</span>
+                                        <span class="text-slate-400">·</span>
+                                        <span class="text-slate-500">{item.clientName}</span>
+                                    </li>
+                                ))}
+                                {suggestions.length > 4 && (
+                                    <li class="text-xs text-slate-500">
+                                        y {suggestions.length - 4} más…
+                                    </li>
+                                )}
+                            </ul>
+
+                            <form method="POST" action="/api/panel/visits/suggest" class="mt-5">
+                                <input type="hidden" name="date" value={today} />
+                                <button
+                                    type="submit"
+                                    class="inline-flex h-14 w-full items-center justify-center rounded-2xl bg-sky-700 px-6 text-base font-bold text-white transition hover:bg-sky-800 active:scale-[0.99] sm:w-auto"
+                                >
+                                    Confirmar visitas de hoy
+                                </button>
+                            </form>
+                        </div>
+                    ) : (
+                        <div>
+                            <h2 class="text-2xl font-extrabold tracking-tight text-slate-900">
+                                No hay visitas para hoy
+                            </h2>
+                            <p class="mt-1 max-w-xl text-sm text-slate-600">
+                                Programa una visita manualmente o define la frecuencia de tus
+                                propiedades para que aparezcan solas.
+                            </p>
+                            <div class="mt-5 flex flex-col gap-2 sm:flex-row">
+                                <a
+                                    href={`/panel/agenda?date=${today}`}
+                                    class="inline-flex h-14 items-center justify-center rounded-2xl bg-sky-700 px-6 text-base font-bold text-white transition hover:bg-sky-800"
+                                >
+                                    Agregar visita
+                                </a>
+                                <a
+                                    href="/panel/clientes"
+                                    class="inline-flex h-14 items-center justify-center rounded-2xl border border-slate-300 bg-white px-6 text-base font-semibold text-slate-700 transition hover:bg-slate-50"
+                                >
+                                    Configurar frecuencia
+                                </a>
+                            </div>
+                        </div>
+                    )
+                ) : (
+                    <div>
+                        <div class="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wide text-sky-700">
+                            <span>
+                            {dayVisits.length} {dayVisits.length === 1 ? 'visita' : 'visitas'}
+                            </span>
+                            <span class="text-slate-300">·</span>
+                            <span>{pending} pendientes</span>
+                            <span class="text-slate-300">·</span>
+                            <span>{completed} completadas</span>
+                        </div>
+
+                        <h2 class="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">
+                            {remaining === 0 ? 'Jornada terminada' : routePlan ? 'Tu ruta está lista' : 'Arma la ruta del día'}
+                        </h2>
+
+                        {remaining === 0 ? (
+                            <p class="mt-1 text-sm text-slate-600">Todas las visitas del día están completadas.</p>
+                        ) : routePlan ? (
+                            <p class="mt-1 text-sm text-slate-600">
+                                {formatDistance(routePlan.distanceMeters)} ·{' '}
+                                {formatDuration(routePlan.durationSeconds)} de recorrido
+                                {routePlan.source === 'fallback' && ' (estimado)'}.
+                            </p>
+                        ) : (
+                            <p class="mt-1 max-w-xl text-sm text-slate-600">
+                                Ordena las paradas por cercanía para ahorrar tiempo y combustible.
+                            </p>
+                        )}
+
+                        <div class="mt-5 flex flex-col gap-2 sm:flex-row">
+                            {remaining === 0 ? null : routePlan ? (
+                                <a
+                                    href={`/panel/ruta?date=${today}`}
+                                    class="inline-flex h-14 items-center justify-center rounded-2xl bg-sky-700 px-6 text-base font-bold text-white transition hover:bg-sky-800 active:scale-[0.99]"
+                                >
+                                    Ver ruta del día
+                                </a>
+                            ) : hasBase ? (
+                                <form method="POST" action="/api/panel/route/optimize">
+                                    <input type="hidden" name="date" value={today} />
+                                    <button
+                                        type="submit"
+                                        class="inline-flex h-14 w-full items-center justify-center rounded-2xl bg-sky-700 px-6 text-base font-bold text-white transition hover:bg-sky-800 active:scale-[0.99] sm:w-auto"
+                                    >
+                                        Optimizar ruta
+                                    </button>
+                                </form>
+                            ) : (
+                                <a
+                                    href="/panel/ajustes"
+                                    class="inline-flex h-14 items-center justify-center rounded-2xl bg-amber-500 px-6 text-base font-bold text-white transition hover:bg-amber-600"
+                                >
+                                    Configurar ubicación base
+                                </a>
+                            )}
+
+                            <a
+                                href={`/panel/agenda?date=${today}`}
+                                class="inline-flex h-14 items-center justify-center rounded-2xl border border-slate-300 bg-white px-6 text-base font-semibold text-slate-700 transition hover:bg-slate-50"
+                            >
+                                Editar agenda
+                            </a>
+                        </div>
+                    </div>
+                )
+            }
+        </section>
+
+        {
+            dayVisits.length > 0 && (
+                <section>
+                    <h2 class="mb-3 text-base font-extrabold text-slate-900">Paradas de hoy</h2>
+                    <ul class="space-y-3">
+                        {dayVisits.map((row, index) => (
+                            <li class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                <div class="flex items-start gap-3">
+                                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-extrabold text-sky-800">
+                                        {index + 1}
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <a
+                                                href={`/panel/propiedades/${row.property.id}`}
+                                                class="truncate text-base font-extrabold text-slate-900 hover:underline"
+                                            >
+                                                {row.property.alias}
+                                            </a>
+                                            <span
+                                                class:list={[
+                                                    'rounded-full border px-2 py-0.5 text-[11px] font-bold',
+                                                    visitStatusStyle(row.visit.status),
+                                                ]}
+                                            >
+                                                {visitStatusLabel(row.visit.status)}
+                                            </span>
+                                        </div>
+                                        <p class="mt-0.5 truncate text-sm text-slate-500">
+                                            {row.client.name} · {row.property.address}
+                                        </p>
+
+                                        <div class="mt-3 flex flex-wrap gap-2">
+                                            {row.visit.status === 'scheduled' && (
+                                                    <form
+                                                        method="POST"
+                                                        action={`/api/panel/visits/${row.visit.id}`}
+                                                    >
+                                                        <input
+                                                            type="hidden"
+                                                            name="action"
+                                                            value="start"
+                                                        />
+                                                        <button
+                                                            type="submit"
+                                                            class="h-9 rounded-lg bg-sky-700 px-3 text-xs font-bold text-white transition hover:bg-sky-800"
+                                                        >
+                                                            Iniciar
+                                                        </button>
+                                                    </form>
+                                                )}
+
+                                            {row.visit.status !== 'completed' && (
+                                                <form
+                                                    method="POST"
+                                                    action={`/api/panel/visits/${row.visit.id}`}
+                                                >
+                                                    <input
+                                                        type="hidden"
+                                                        name="action"
+                                                        value="complete"
+                                                    />
+                                                    <button
+                                                        type="submit"
+                                                        class="h-9 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
+                                                    >
+                                                        Completar
+                                                    </button>
+                                                </form>
+                                            )}
+
+                                            {row.property.lat != null &&
+                                                row.property.lng != null && (
+                                                    <a
+                                                        href={`https://www.google.com/maps/dir/?api=1&destination=${row.property.lat},${row.property.lng}&travelmode=driving`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        class="inline-flex h-9 items-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                                                    >
+                                                        Navegar
+                                                    </a>
+                                                )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )
+        }
+
+        {
+            !hasBase && (
+                <a
+                    href="/panel/ajustes"
+                    class="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+                >
+                    <span>
+                        <span class="font-bold">Falta la ubicación base.</span> Sin ella no se pueden
+                        calcular las rutas.
+                    </span>
+                    <span class="font-bold">Configurar →</span>
+                </a>
+            )
+        }
+
         <div class="grid gap-3 sm:grid-cols-3">
             {
                 stats.map((stat) => (
                     <a
                         href={stat.href}
-                        class:list={[
-                            'rounded-2xl border bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md',
-                            stat.highlight ? 'border-sky-300 ring-2 ring-sky-100' : 'border-slate-200',
-                        ]}
+                        class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                     >
-                        <p class="text-xs font-bold uppercase tracking-wide text-slate-500">
+                        <p class="text-[11px] font-bold uppercase tracking-wide text-slate-500">
                             {stat.label}
                         </p>
-                        <p class="mt-2 text-3xl font-extrabold text-slate-900">{stat.value}</p>
-                        <p
-                            class:list={[
-                                'mt-1 text-xs font-semibold',
-                                stat.highlight ? 'text-sky-700' : 'text-slate-400',
-                            ]}
-                        >
-                            {stat.hint}
-                        </p>
+                        <p class="mt-1 text-2xl font-extrabold text-slate-900">{stat.value}</p>
                     </a>
                 ))
             }
         </div>
 
-        <div class="grid gap-4 lg:grid-cols-2">
-            <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div class="mb-4 flex items-center justify-between">
-                    <h2 class="text-base font-extrabold text-slate-900">Primeros pasos</h2>
-                    <span class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                        Fase 1
-                    </span>
-                </div>
-                <ul class="space-y-3 text-sm">
-                    <li class="flex items-start gap-3">
-                        <span class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">
-                            ✓
-                        </span>
-                        <span class="text-slate-600">Base de datos y login funcionando</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span
-                            class:list={[
-                                'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-                                totalProperties > 0
-                                    ? 'bg-emerald-100 text-emerald-700'
-                                    : 'bg-slate-100 text-slate-400',
-                            ]}
+        {
+            recentLeads.length > 0 && (
+                <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div class="mb-3 flex items-center justify-between">
+                        <h2 class="text-base font-extrabold text-slate-900">Últimos leads</h2>
+                        <a
+                            href="/panel/leads"
+                            class="text-xs font-bold text-sky-700 hover:underline"
                         >
-                            {totalProperties > 0 ? '✓' : '2'}
-                        </span>
-                        <span class="text-slate-600">Agrega tu primer cliente y su piscina</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-400">
-                            3
-                        </span>
-                        <span class="text-slate-600">Configura la dirección base de las rutas</span>
-                    </li>
-                    <li class="flex items-start gap-3">
-                        <span class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-400">
-                            4
-                        </span>
-                        <span class="text-slate-400">Rutas optimizadas y modo visita (Fase 2)</span>
-                    </li>
-                </ul>
-
-                <div class="mt-5 flex flex-wrap gap-2">
-                    <a
-                        href="/panel/clientes/nuevo"
-                        class="inline-flex h-10 items-center justify-center rounded-xl bg-sky-700 px-4 text-sm font-bold text-white transition hover:bg-sky-800"
-                    >
-                        + Nuevo cliente
-                    </a>
-                    <a
-                        href="/panel/ajustes"
-                        class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                    >
-                        Configurar base
-                    </a>
-                </div>
-            </section>
-
-            <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div class="mb-4 flex items-center justify-between">
-                    <h2 class="text-base font-extrabold text-slate-900">Últimos leads</h2>
-                    <a href="/panel/leads" class="text-xs font-bold text-sky-700 hover:underline">
-                        Ver todos →
-                    </a>
-                </div>
-
-                {
-                    recentLeads.length === 0 ? (
-                        <p class="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-                            Aún no hay mensajes desde el sitio web.
-                        </p>
-                    ) : (
-                        <ul class="divide-y divide-slate-100">
-                            {recentLeads.map((lead) => (
-                                <li class="flex items-start justify-between gap-3 py-3">
-                                    <div class="min-w-0">
-                                        <p class="truncate text-sm font-bold text-slate-900">
-                                            {lead.name}
-                                        </p>
-                                        <p class="truncate text-xs text-slate-500">{lead.phone}</p>
-                                        <p class="mt-0.5 text-[11px] text-slate-400">
-                                            {formatRelative(lead.createdAt)}
-                                        </p>
-                                    </div>
-                                    <span
-                                        class:list={[
-                                            'shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-bold',
-                                            leadStatusStyle(lead.status),
-                                        ]}
-                                    >
-                                        {leadStatusLabel(lead.status)}
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                    )
-                }
-            </section>
-        </div>
-
-        <section
-            class="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-5 text-sm text-slate-500"
-        >
-            <p class="font-semibold text-slate-700">Siguiente fase: el planificador</p>
-            <p class="mt-1">
-                Aquí aparecerá tu ruta del día, las paradas ordenadas por cercanía y los
-                recordatorios de bomba y cloro. Por ahora deja listos tus clientes y propiedades.
-            </p>
-        </section>
+                            Ver todos →
+                        </a>
+                    </div>
+                    <ul class="divide-y divide-slate-100">
+                        {recentLeads.map((lead) => (
+                            <li class="flex items-start justify-between gap-3 py-3">
+                                <div class="min-w-0">
+                                    <p class="truncate text-sm font-bold text-slate-900">
+                                        {lead.name}
+                                    </p>
+                                    <p class="truncate text-xs text-slate-500">{lead.phone}</p>
+                                    <p class="mt-0.5 text-[11px] text-slate-400">
+                                        {formatRelative(lead.createdAt)}
+                                    </p>
+                                </div>
+                                <span
+                                    class:list={[
+                                        'shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-bold',
+                                        leadStatusStyle(lead.status),
+                                    ]}
+                                >
+                                    {leadStatusLabel(lead.status)}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )
+        }
     </div>
 </PanelLayout>

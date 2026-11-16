@@ -1,19 +1,28 @@
 import {
     boolean,
+    date,
     doublePrecision,
     index,
     integer,
+    jsonb,
     numeric,
     pgEnum,
     pgTable,
     text,
     timestamp,
+    uniqueIndex,
     uuid,
 } from 'drizzle-orm/pg-core';
 
 export const userRole = pgEnum('user_role', ['owner', 'tech']);
 export const clientStatus = pgEnum('client_status', ['active', 'inactive']);
 export const leadStatus = pgEnum('lead_status', ['new', 'contacted', 'quoted', 'won', 'lost']);
+export const visitStatus = pgEnum('visit_status', [
+    'scheduled',
+    'in_progress',
+    'completed',
+    'skipped',
+]);
 
 const timestamps = {
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -95,6 +104,57 @@ export const settings = pgTable('settings', {
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const visits = pgTable(
+    'visits',
+    {
+        id: uuid('id').primaryKey().defaultRandom(),
+        propertyId: uuid('property_id')
+            .notNull()
+            .references(() => properties.id, { onDelete: 'cascade' }),
+        scheduledFor: date('scheduled_for').notNull(),
+        status: visitStatus('status').notNull().default('scheduled'),
+        orderIndex: integer('order_index').notNull().default(0),
+        startedAt: timestamp('started_at', { withTimezone: true }),
+        completedAt: timestamp('completed_at', { withTimezone: true }),
+        pumpStartedAt: timestamp('pump_started_at', { withTimezone: true }),
+        pumpStoppedAt: timestamp('pump_stopped_at', { withTimezone: true }),
+        checklist: jsonb('checklist').$type<VisitChecklist>(),
+        notes: text('notes'),
+        ...timestamps,
+    },
+    (table) => [
+        index('visits_scheduled_for_idx').on(table.scheduledFor),
+        index('visits_property_id_idx').on(table.propertyId),
+        uniqueIndex('visits_property_date_unique').on(table.propertyId, table.scheduledFor),
+    ],
+);
+
+export interface RouteStop {
+    visitId: string;
+    propertyId: string;
+    order: number;
+    lat: number;
+    lng: number;
+}
+
+export const routePlans = pgTable(
+    'route_plans',
+    {
+        id: uuid('id').primaryKey().defaultRandom(),
+        visitDate: date('visit_date').notNull(),
+        stops: jsonb('stops').$type<RouteStop[]>().notNull(),
+        distanceMeters: integer('distance_meters'),
+        durationSeconds: integer('duration_seconds'),
+        polyline: text('polyline'),
+        source: text('source').notNull().default('google'),
+        optimizedAt: timestamp('optimized_at', { withTimezone: true }).notNull().defaultNow(),
+        ...timestamps,
+    },
+    (table) => [uniqueIndex('route_plans_visit_date_unique').on(table.visitDate)],
+);
+
+export type VisitChecklist = Record<string, boolean>;
+
 export type Profile = typeof profiles.$inferSelect;
 export type Client = typeof clients.$inferSelect;
 export type NewClient = typeof clients.$inferInsert;
@@ -103,3 +163,6 @@ export type NewProperty = typeof properties.$inferInsert;
 export type ServicePlan = typeof servicePlans.$inferSelect;
 export type Lead = typeof leads.$inferSelect;
 export type NewLead = typeof leads.$inferInsert;
+export type Visit = typeof visits.$inferSelect;
+export type NewVisit = typeof visits.$inferInsert;
+export type RoutePlan = typeof routePlans.$inferSelect;

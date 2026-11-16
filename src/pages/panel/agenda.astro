@@ -1,0 +1,291 @@
+---
+import PanelLayout from '@/layouts/PanelLayout.astro';
+import PageHeader from '@/components/panel/PageHeader.astro';
+import DateNav from '@/components/panel/DateNav.astro';
+import { getToday, isValidDate } from '@/lib/dates';
+import { visitStatusLabel, visitStatusStyle } from '@/lib/format';
+import { listPropertiesWithClient } from '@/server/properties';
+import { listVisitsByDate, suggestVisits } from '@/server/visits';
+
+const dateParam = Astro.url.searchParams.get('date');
+const date = isValidDate(dateParam) ? dateParam : getToday();
+
+const [dayVisits, properties, suggestions] = await Promise.all([
+    listVisitsByDate(date, { includeSkipped: true }),
+    listPropertiesWithClient(),
+    suggestVisits(date),
+]);
+
+const ok = Astro.url.searchParams.get('ok');
+---
+
+<PanelLayout title="Agenda">
+    <PageHeader title="Agenda" description="Programa, ajusta y cierra las visitas del día.">
+        <a
+            href={`/panel/ruta?date=${date}`}
+            class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+        >
+            Ver ruta
+        </a>
+    </PageHeader>
+
+    <DateNav date={date} basePath="/panel/agenda" />
+
+    {
+        ok === 'suggest' && (
+            <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                Visitas sugeridas agregadas a la agenda.
+            </div>
+        )
+    }
+
+    <div class="grid gap-4 lg:grid-cols-5">
+        <section class="lg:col-span-3">
+            <h2 class="mb-3 text-base font-extrabold text-slate-900">
+                Visitas
+                <span class="ml-1 text-sm font-semibold text-slate-400">({dayVisits.length})</span>
+            </h2>
+
+            {
+                dayVisits.length === 0 ? (
+                    <div class="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
+                        <p class="text-3xl">🗓️</p>
+                        <h3 class="mt-2 text-base font-bold text-slate-900">
+                            No hay visitas este día
+                        </h3>
+                        <p class="mx-auto mt-1 max-w-sm text-sm text-slate-500">
+                            Agrega una propiedad desde el panel derecho o usa las sugerencias.
+                        </p>
+                    </div>
+                ) : (
+                    <ul class="space-y-3">
+                        {dayVisits.map((row, index) => (
+                            <li class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                <div class="flex items-start gap-3">
+                                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-extrabold text-sky-800">
+                                        {index + 1}
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <a
+                                                href={`/panel/propiedades/${row.property.id}`}
+                                                class="truncate text-base font-extrabold text-slate-900 hover:underline"
+                                            >
+                                                {row.property.alias}
+                                            </a>
+                                            <span
+                                                class:list={[
+                                                    'rounded-full border px-2 py-0.5 text-[11px] font-bold',
+                                                    visitStatusStyle(row.visit.status),
+                                                ]}
+                                            >
+                                                {visitStatusLabel(row.visit.status)}
+                                            </span>
+                                        </div>
+                                        <p class="mt-0.5 truncate text-sm text-slate-500">
+                                            {row.client.name} · {row.property.address}
+                                        </p>
+
+                                        <div class="mt-3 flex flex-wrap items-center gap-2">
+                                            {row.visit.status === 'scheduled' && (
+                                                    <form
+                                                        method="POST"
+                                                        action={`/api/panel/visits/${row.visit.id}`}
+                                                    >
+                                                        <input
+                                                            type="hidden"
+                                                            name="action"
+                                                            value="start"
+                                                        />
+                                                        <button
+                                                            type="submit"
+                                                            class="h-9 rounded-lg bg-sky-700 px-3 text-xs font-bold text-white transition hover:bg-sky-800"
+                                                        >
+                                                            Iniciar
+                                                        </button>
+                                                    </form>
+                                                )}
+
+                                            {(row.visit.status === 'scheduled' ||
+                                                row.visit.status === 'in_progress') && (
+                                                <form
+                                                    method="POST"
+                                                    action={`/api/panel/visits/${row.visit.id}`}
+                                                >
+                                                    <input
+                                                        type="hidden"
+                                                        name="action"
+                                                        value="complete"
+                                                    />
+                                                    <button
+                                                        type="submit"
+                                                        class="h-9 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
+                                                    >
+                                                        Completar
+                                                    </button>
+                                                </form>
+                                            )}
+
+                                            {row.visit.status === 'scheduled' ||
+                                            row.visit.status === 'in_progress' ? (
+                                                <form
+                                                    method="POST"
+                                                    action={`/api/panel/visits/${row.visit.id}`}
+                                                >
+                                                    <input
+                                                        type="hidden"
+                                                        name="action"
+                                                        value="skip"
+                                                    />
+                                                    <button
+                                                        type="submit"
+                                                        class="h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                                                    >
+                                                        Omitir
+                                                    </button>
+                                                </form>
+                                            ) : (
+                                                <form
+                                                    method="POST"
+                                                    action={`/api/panel/visits/${row.visit.id}`}
+                                                >
+                                                    <input
+                                                        type="hidden"
+                                                        name="action"
+                                                        value="reopen"
+                                                    />
+                                                    <button
+                                                        type="submit"
+                                                        class="h-9 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                                                    >
+                                                        Reabrir
+                                                    </button>
+                                                </form>
+                                            )}
+
+                                            <form
+                                                method="POST"
+                                                action={`/api/panel/visits/${row.visit.id}`}
+                                                onsubmit="return confirm('¿Eliminar esta visita de la agenda?')"
+                                            >
+                                                <input type="hidden" name="action" value="delete" />
+                                                <button
+                                                    type="submit"
+                                                    class="h-9 rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                                                >
+                                                    Eliminar
+                                                </button>
+                                            </form>
+
+                                            {row.property.lat != null &&
+                                                row.property.lng != null && (
+                                                    <a
+                                                        href={`https://www.google.com/maps/dir/?api=1&destination=${row.property.lat},${row.property.lng}&travelmode=driving`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        class="inline-flex h-9 items-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                                                    >
+                                                        Navegar
+                                                    </a>
+                                                )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                )
+            }
+        </section>
+
+        <aside class="space-y-4 lg:col-span-2">
+            <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h2 class="text-base font-extrabold text-slate-900">Agregar visita</h2>
+                <p class="mt-1 text-xs text-slate-500">Se agrega al final de la agenda del día.</p>
+
+                {
+                    properties.length === 0 ? (
+                        <a
+                            href="/panel/clientes/nuevo"
+                            class="mt-4 inline-flex h-11 items-center justify-center rounded-xl bg-sky-700 px-4 text-sm font-bold text-white"
+                        >
+                            + Crear cliente y propiedad
+                        </a>
+                    ) : (
+                        <form method="POST" action="/api/panel/visits" class="mt-4 space-y-3">
+                            <input type="hidden" name="scheduledFor" value={date} />
+                            <label for="propertyId" class="sr-only">
+                                Propiedad
+                            </label>
+                            <select
+                                id="propertyId"
+                                name="propertyId"
+                                required
+                                class="h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                            >
+                                <option value="">Elige una propiedad…</option>
+                                {properties.map(({ property, client }) => (
+                                    <option value={property.id}>
+                                        {property.alias} · {client.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <button
+                                type="submit"
+                                class="inline-flex h-11 w-full items-center justify-center rounded-xl bg-sky-700 px-4 text-sm font-bold text-white transition hover:bg-sky-800"
+                            >
+                                Agregar a la agenda
+                            </button>
+                        </form>
+                    )
+                }
+            </section>
+
+            <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-base font-extrabold text-slate-900">Sugerencias</h2>
+                    <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">
+                        {suggestions.length}
+                    </span>
+                </div>
+
+                {
+                    suggestions.length === 0 ? (
+                        <p class="mt-2 text-sm text-slate-500">
+                            No hay propiedades pendientes según su frecuencia. Puedes ajustarla en
+                            la ficha de cada propiedad.
+                        </p>
+                    ) : (
+                        <>
+                            <ul class="mt-3 space-y-2 text-sm">
+                                {suggestions.map((item) => (
+                                    <li class="flex items-start gap-2">
+                                        <span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-600" />
+                                        <span>
+                                            <span class="font-semibold text-slate-800">
+                                                {item.alias}
+                                            </span>
+                                            <span class="block text-xs text-slate-500">
+                                                {item.clientName} · {item.visitsPerWeek}/semana
+                                            </span>
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                            <form method="POST" action="/api/panel/visits/suggest" class="mt-4">
+                                <input type="hidden" name="date" value={date} />
+                                <button
+                                    type="submit"
+                                    class="inline-flex h-11 w-full items-center justify-center rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-800 transition hover:bg-sky-100"
+                                >
+                                    Agregar {suggestions.length}{' '}
+                                    {suggestions.length === 1 ? 'sugerida' : 'sugeridas'}
+                                </button>
+                            </form>
+                        </>
+                    )
+                }
+            </section>
+        </aside>
+    </div>
+</PanelLayout>

@@ -1,6 +1,6 @@
 ---
 import '@/styles/global.css';
-import { Home, Users, Inbox, Settings, LogOut, Route } from 'lucide-react';
+import { Home, Users, Inbox, Settings, LogOut, Route, CalendarDays } from 'lucide-react';
 
 interface Props {
     title: string;
@@ -15,10 +15,15 @@ const initial = (userEmail[0] ?? 'J').toUpperCase();
 
 const items = [
     { href: '/panel', label: 'Hoy', icon: Home, exact: true },
+    { href: '/panel/agenda', label: 'Agenda', icon: CalendarDays, exact: false },
+    { href: '/panel/ruta', label: 'Ruta', icon: Route, exact: false },
     { href: '/panel/clientes', label: 'Clientes', icon: Users, exact: false },
     { href: '/panel/leads', label: 'Leads', icon: Inbox, exact: false },
     { href: '/panel/ajustes', label: 'Ajustes', icon: Settings, exact: false },
 ];
+
+// En móvil dejamos los cinco accesos más usados; Leads sigue en el escritorio.
+const mobileItems = items.filter((item) => item.href !== '/panel/leads');
 
 const isActive = (href: string, exact: boolean) =>
     exact ? path === href : path === href || path.startsWith(`${href}/`);
@@ -82,13 +87,6 @@ const isActive = (href: string, exact: boolean) =>
                             );
                         })
                     }
-                    <div class="flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400">
-                        <Route className="h-5 w-5" />
-                        Rutas
-                        <span class="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                            Pronto
-                        </span>
-                    </div>
                 </nav>
 
                 <div class="border-t border-slate-100 p-3">
@@ -150,9 +148,9 @@ const isActive = (href: string, exact: boolean) =>
                     class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur lg:hidden"
                     style="padding-bottom: env(safe-area-inset-bottom)"
                 >
-                    <div class="grid grid-cols-4">
+                    <div class="grid grid-cols-5">
                         {
-                            items.map((item) => {
+                            mobileItems.map((item) => {
                                 const Icon = item.icon;
                                 const active = isActive(item.href, item.exact);
                                 return (
@@ -160,7 +158,7 @@ const isActive = (href: string, exact: boolean) =>
                                         href={item.href}
                                         aria-current={active ? 'page' : undefined}
                                         class:list={[
-                                            'flex flex-col items-center gap-1 py-2.5 text-[11px] font-semibold transition',
+                                            'flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold transition',
                                             active ? 'text-sky-700' : 'text-slate-500',
                                         ]}
                                     >

@@ -1,7 +1,7 @@
 import { count } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { clients, properties } from '../src/db/schema';
+import { clients, properties, servicePlans } from '../src/db/schema';
 
 try {
     process.loadEnvFile('.env.local');
@@ -124,10 +124,32 @@ const demo = [
     },
 ];
 
-for (const item of demo) {
+const schedules = [
+    { visitsPerWeek: 2, preferredDays: ['lunes', 'jueves'] },
+    { visitsPerWeek: 1, preferredDays: ['martes'] },
+    { visitsPerWeek: 2, preferredDays: ['miercoles', 'sabado'] },
+    { visitsPerWeek: 1, preferredDays: ['jueves'] },
+    { visitsPerWeek: 1, preferredDays: ['viernes'] },
+    { visitsPerWeek: 1, preferredDays: ['lunes'] },
+];
+
+for (const [index, item] of demo.entries()) {
     const [client] = await db.insert(clients).values(item.client).returning();
-    await db.insert(properties).values({ ...item.property, clientId: client.id });
+    const [property] = await db
+        .insert(properties)
+        .values({ ...item.property, clientId: client.id })
+        .returning();
+
+    const schedule = schedules[index % schedules.length];
+    await db.insert(servicePlans).values({
+        propertyId: property.id,
+        visitsPerWeek: schedule.visitsPerWeek,
+        preferredDays: schedule.preferredDays,
+        active: true,
+    });
 }
 
-console.log(`Seed demo listo: ${demo.length} clientes con una propiedad cada uno.`);
+console.log(
+    `Seed demo listo: ${demo.length} clientes con una propiedad y su frecuencia de servicio.`,
+);
 await sql.end();

@@ -60,3 +60,42 @@ const LEAD_STATUS_STYLES: Record<string, string> = {
 export function leadStatusStyle(status: string): string {
     return LEAD_STATUS_STYLES[status] ?? LEAD_STATUS_STYLES.lost;
 }
+
+const VISIT_STATUS_LABELS: Record<string, string> = {
+    scheduled: 'Pendiente',
+    in_progress: 'En curso',
+    completed: 'Completada',
+    skipped: 'Omitida',
+};
+
+export function visitStatusLabel(status: string): string {
+    return VISIT_STATUS_LABELS[status] ?? status;
+}
+
+const VISIT_STATUS_STYLES: Record<string, string> = {
+    scheduled: 'bg-slate-100 text-slate-700 border-slate-200',
+    in_progress: 'bg-amber-100 text-amber-800 border-amber-200',
+    completed: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    skipped: 'bg-slate-100 text-slate-400 border-slate-200',
+};
+
+export function visitStatusStyle(status: string): string {
+    return VISIT_STATUS_STYLES[status] ?? VISIT_STATUS_STYLES.scheduled;
+}
+
+export function formatDistance(meters: number | null | undefined): string {
+    if (meters == null || !Number.isFinite(meters)) return '—';
+    if (meters < 1000) return `${Math.round(meters)} m`;
+    return `${(meters / 1000).toFixed(1)} km`;
+}
+
+export function formatDuration(seconds: number | null | undefined): string {
+    if (seconds == null || !Number.isFinite(seconds)) return '—';
+
+    const totalMinutes = Math.round(seconds / 60);
+    if (totalMinutes < 60) return `${totalMinutes} min`;
+
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`;
+}

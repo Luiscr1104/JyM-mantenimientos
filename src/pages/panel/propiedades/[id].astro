@@ -3,6 +3,7 @@ import PanelLayout from '@/layouts/PanelLayout.astro';
 import PageHeader from '@/components/panel/PageHeader.astro';
 import MapPicker from '@/components/panel/MapPicker';
 import { getPropertyWithClient } from '@/server/properties';
+import { getServicePlan } from '@/server/service-plans';
 
 const id = Astro.params.id;
 if (!id) return Astro.redirect('/panel/clientes');
@@ -11,7 +12,23 @@ const data = await getPropertyWithClient(id);
 if (!data) return Astro.redirect('/panel/clientes');
 
 const { property, client } = data;
+const plan = await getServicePlan(property.id);
 const hasLocation = property.lat != null && property.lng != null;
+
+const dayLabels: Record<string, string> = {
+    lunes: 'Lun',
+    martes: 'Mar',
+    miercoles: 'Mié',
+    jueves: 'Jue',
+    viernes: 'Vie',
+    sabado: 'Sáb',
+    domingo: 'Dom',
+};
+
+const planDays =
+    plan && plan.preferredDays && plan.preferredDays.length > 0
+        ? plan.preferredDays.map((day) => dayLabels[day] ?? day).join(' · ')
+        : 'Automático';
 
 const poolDetails = [
     { label: 'Tipo de piscina', value: property.poolType },
@@ -90,6 +107,70 @@ const accessDetails = [
                                 </div>
                             ))}
                         </dl>
+                    )
+                }
+            </section>
+            <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div class="mb-3 flex items-center justify-between">
+                    <h2 class="text-base font-extrabold text-slate-900">Frecuencia de servicio</h2>
+                    <a
+                        href={`/panel/propiedades/${property.id}/editar#frecuencia`}
+                        class="text-xs font-bold text-sky-700 hover:underline"
+                    >
+                        Editar
+                    </a>
+                </div>
+
+                {
+                    plan ? (
+                        <dl class="space-y-3">
+                            <div>
+                                <dt class="text-xs font-bold uppercase tracking-wide text-slate-400">
+                                    Visitas por semana
+                                </dt>
+                                <dd class="mt-0.5 text-sm font-medium text-slate-800">
+                                    {plan.visitsPerWeek}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs font-bold uppercase tracking-wide text-slate-400">
+                                    Días preferidos
+                                </dt>
+                                <dd class="mt-0.5 text-sm font-medium text-slate-800">
+                                    {planDays}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs font-bold uppercase tracking-wide text-slate-400">
+                                    Estado
+                                </dt>
+                                <dd class="mt-0.5">
+                                    <span
+                                        class:list={[
+                                            'rounded-full border px-2 py-0.5 text-[11px] font-bold',
+                                            plan.active
+                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                                : 'border-slate-200 bg-slate-50 text-slate-500',
+                                        ]}
+                                    >
+                                        {plan.active ? 'Plan activo' : 'Plan pausado'}
+                                    </span>
+                                </dd>
+                            </div>
+                        </dl>
+                    ) : (
+                        <div>
+                            <p class="text-sm text-slate-500">
+                                Sin frecuencia configurada. Defínela para que esta propiedad
+                                aparezca en las sugerencias de la agenda.
+                            </p>
+                            <a
+                                href={`/panel/propiedades/${property.id}/editar#frecuencia`}
+                                class="mt-3 inline-flex h-9 items-center rounded-lg bg-sky-700 px-3 text-xs font-bold text-white"
+                            >
+                                Configurar frecuencia
+                            </a>
+                        </div>
                     )
                 }
             </section>

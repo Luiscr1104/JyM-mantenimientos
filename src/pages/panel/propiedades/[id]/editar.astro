@@ -2,7 +2,9 @@
 import PanelLayout from '@/layouts/PanelLayout.astro';
 import PageHeader from '@/components/panel/PageHeader.astro';
 import PropertyForm from '@/components/panel/PropertyForm';
+import ServicePlanForm from '@/components/panel/ServicePlanForm';
 import { getPropertyWithClient } from '@/server/properties';
+import { getServicePlan } from '@/server/service-plans';
 
 const id = Astro.params.id;
 if (!id) return Astro.redirect('/panel/clientes');
@@ -11,12 +13,23 @@ const data = await getPropertyWithClient(id);
 if (!data) return Astro.redirect('/panel/clientes');
 
 const { property, client } = data;
+const plan = await getServicePlan(property.id);
+
+const ok = Astro.url.searchParams.get('ok');
 ---
 
 <PanelLayout title={`Editar ${property.alias}`}>
     <PageHeader title="Editar propiedad" description={`${property.alias} · ${client.name}`} />
 
-    <div class="max-w-3xl">
+    {
+        ok === 'plan' && (
+            <div class="mb-4 max-w-3xl rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                Frecuencia de servicio actualizada.
+            </div>
+        )
+    }
+
+    <div class="max-w-3xl space-y-6">
         <PropertyForm
             client:load
             mode="edit"
@@ -38,5 +51,21 @@ const { property, client } = data;
                 sanitation: property.sanitation,
             }}
         />
+
+        <div id="frecuencia">
+            <ServicePlanForm
+                client:load
+                propertyId={property.id}
+                initial={
+                    plan
+                        ? {
+                              visitsPerWeek: plan.visitsPerWeek,
+                              preferredDays: plan.preferredDays ?? [],
+                              active: plan.active,
+                          }
+                        : null
+                }
+            />
+        </div>
     </div>
 </PanelLayout>

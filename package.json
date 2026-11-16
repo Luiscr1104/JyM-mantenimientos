@@ -8,11 +8,13 @@
     "preview": "astro preview",
     "astro": "astro",
     "check": "astro check",
+    "test:stage2": "tsx --test tests/stage2.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "seed:owner": "tsx scripts/seed-owner.ts",
     "seed:user": "tsx scripts/seed-user.ts",
+    "seed:plans": "tsx scripts/seed-plans.ts",
     "seed:demo": "tsx scripts/seed-demo.ts"
   },
   "dependencies": {

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidDate } from './dates';
 
 const emptyToUndefined = (value: unknown) =>
     value === '' || value === null || value === undefined ? undefined : value;
@@ -58,6 +59,66 @@ export const settingsInputSchema = z.object({
     baseLng: optionalNumber(-180, 180),
 });
 
+export const dateStringSchema = z
+    .string()
+    .refine(isValidDate, 'Fecha inválida');
+
+export const visitInputSchema = z.object({
+    propertyId: z.string().uuid('Propiedad inválida'),
+    scheduledFor: dateStringSchema,
+    orderIndex: z.coerce.number().int().min(0).optional(),
+});
+
+export const visitStatusSchema = z.enum(['scheduled', 'in_progress', 'completed', 'skipped']);
+
+export const visitActionSchema = z.enum(['start', 'complete', 'skip', 'reopen', 'delete']);
+
+export const PREFERRED_DAYS = [
+    'lunes',
+    'martes',
+    'miercoles',
+    'jueves',
+    'viernes',
+    'sabado',
+    'domingo',
+] as const;
+
+const preferredDaysSchema = z.preprocess(
+    (value) => {
+        if (typeof value === 'string') return value ? value.split(',') : [];
+        if (Array.isArray(value)) return value;
+        return [];
+    },
+    z.array(z.enum(PREFERRED_DAYS)).default([]),
+);
+
+export const servicePlanInputSchema = z.object({
+    visitsPerWeek: z.coerce
+        .number()
+        .int('Usa un número entero')
+        .min(0, 'Mínimo 0')
+        .max(7, 'Máximo 7'),
+    preferredDays: preferredDaysSchema,
+    active: z
+        .preprocess(
+            (value) => value === true || value === 'true' || value === 'on' || value === 1,
+            z.boolean(),
+        )
+        .default(true),
+}).superRefine((plan, context) => {
+    const uniqueDays = new Set(plan.preferredDays);
+    if (uniqueDays.size !== plan.preferredDays.length) {
+        context.addIssue({ code: 'custom', message: 'No repitas días preferidos', path: ['preferredDays'] });
+    }
+    if (plan.preferredDays.length > 0 && plan.preferredDays.length !== plan.visitsPerWeek) {
+        context.addIssue({
+            code: 'custom',
+            message: 'Selecciona tantos días como visitas por semana, o deja los días vacíos',
+            path: ['preferredDays'],
+        });
+    }
+});
+
 export const passwordInputSchema = z.object({
     password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(200),
 });
@@ -66,6 +127,8 @@ export type ClientInput = z.infer<typeof clientInputSchema>;
 export type PropertyInput = z.infer<typeof propertyInputSchema>;
 export type LeadInput = z.infer<typeof leadInputSchema>;
 export type SettingsInput = z.infer<typeof settingsInputSchema>;
+export type VisitInput = z.infer<typeof visitInputSchema>;
+export type ServicePlanInput = z.infer<typeof servicePlanInputSchema>;
 
 /** Convierte cadenas vacías en null para la base de datos. */
 export function nullIfEmpty(value: string | null | undefined): string | null {

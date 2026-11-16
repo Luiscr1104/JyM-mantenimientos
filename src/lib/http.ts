@@ -24,3 +24,26 @@ export async function readJsonOrForm(request: Request): Promise<Record<string, u
     const form = await request.formData();
     return Object.fromEntries(form.entries());
 }
+
+/** Redirige al referer si es del mismo origen; si no, al fallback. */
+export function redirectBack(request: Request, fallback: string): Response {
+    const referer = request.headers.get('referer');
+
+    if (referer) {
+        try {
+            const target = new URL(referer);
+            const current = new URL(request.url);
+
+            if (target.origin === current.origin) {
+                return new Response(null, {
+                    status: 303,
+                    headers: { Location: `${target.pathname}${target.search}` },
+                });
+            }
+        } catch {
+            // Referer inválido: usamos el fallback.
+        }
+    }
+
+    return new Response(null, { status: 303, headers: { Location: fallback } });
+}
