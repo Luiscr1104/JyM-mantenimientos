@@ -12,6 +12,8 @@ import {
 } from '@/db';
 import { matchesPreferredDay } from '@/lib/dates';
 import type { VisitInput } from '@/lib/validation';
+import { EXIT_STEPS, normalizeChecklist } from '@/lib/visit-work';
+import { completeVisit, VisitWorkError } from './visit-work';
 
 export interface VisitWithProperty {
     visit: Visit;
@@ -110,8 +112,16 @@ export async function createVisit(input: VisitInput) {
 }
 
 export async function deleteVisit(id: string) {
-    const [row] = await db.delete(visits).where(eq(visits.id, id)).returning({
-        date: visits.scheduledFor,
+    const row = await db.transaction(async (tx) => {
+        const [current] = await tx.select().from(visits).where(eq(visits.id, id)).for('update');
+        if (!current) return null;
+        if (current.pumpStartedAt && !current.pumpStoppedAt) {
+            throw new VisitWorkError('Detén y verifica la bomba antes de eliminar la visita.');
+        }
+        const [deleted] = await tx.delete(visits).where(eq(visits.id, id)).returning({
+            date: visits.scheduledFor,
+        });
+        return deleted;
     });
 
     if (row) await invalidateRoute(row.date);
@@ -123,14 +133,14 @@ export async function applyVisitAction(id: string, action: VisitAction) {
         await deleteVisit(id);
         return null;
     }
+    if (action === 'complete') return completeVisit(id);
 
     const [current] = await db.select().from(visits).where(eq(visits.id, id)).limit(1);
     if (!current) return null;
-    const allowed: Record<Exclude<VisitAction, 'delete'>, Visit['status'][]> = {
+    const allowed: Record<Exclude<VisitAction, 'delete' | 'complete'>, Visit['status'][]> = {
         start: ['scheduled'],
-        complete: ['scheduled', 'in_progress'],
         skip: ['scheduled', 'in_progress'],
-        reopen: ['completed', 'skipped', 'in_progress'],
+        reopen: ['completed', 'skipped'],
     };
     if (!allowed[action].includes(current.status)) return current;
 
@@ -142,27 +152,36 @@ export async function applyVisitAction(id: string, action: VisitAction) {
             patch.status = 'in_progress';
             patch.startedAt = current.startedAt ?? now;
             break;
-        case 'complete':
-            patch.status = 'completed';
-            patch.startedAt = current.startedAt ?? now;
-            patch.completedAt = now;
-            break;
         case 'skip':
+            if (current.pumpStartedAt && !current.pumpStoppedAt) {
+                throw new VisitWorkError('Detén y verifica la bomba antes de omitir la visita.');
+            }
             patch.status = 'skipped';
             break;
         case 'reopen':
             patch.status = 'scheduled';
             patch.startedAt = null;
             patch.completedAt = null;
+            patch.checklist = normalizeChecklist(current.checklist);
+            for (const { key } of EXIT_STEPS) patch.checklist[key] = false;
             break;
     }
 
     const [row] = await db.update(visits).set(patch)
-        .where(and(eq(visits.id, id), eq(visits.status, current.status))).returning();
+        .where(and(
+            eq(visits.id, id),
+            eq(visits.status, current.status),
+            action === 'skip'
+                ? sql`(${visits.pumpStartedAt} is null or ${visits.pumpStoppedAt} is not null)`
+                : undefined,
+        )).returning();
     if (row && action !== 'start') await invalidateRoute(current.scheduledFor);
 
     if (row) return row;
     const [latest] = await db.select().from(visits).where(eq(visits.id, id)).limit(1);
+    if (action === 'skip' && latest?.pumpStartedAt && !latest.pumpStoppedAt) {
+        throw new VisitWorkError('Detén y verifica la bomba antes de omitir la visita.');
+    }
     return latest ?? null;
 }
 

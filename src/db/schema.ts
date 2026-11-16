@@ -120,6 +120,7 @@ export const visits = pgTable(
         pumpStoppedAt: timestamp('pump_stopped_at', { withTimezone: true }),
         checklist: jsonb('checklist').$type<VisitChecklist>(),
         notes: text('notes'),
+        pendingReason: text('pending_reason'),
         ...timestamps,
     },
     (table) => [

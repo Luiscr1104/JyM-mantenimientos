@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isValidDate } from './dates';
+import { EXIT_STEPS, TASKS } from './visit-work';
 
 const emptyToUndefined = (value: unknown) =>
     value === '' || value === null || value === undefined ? undefined : value;
@@ -72,6 +73,18 @@ export const visitInputSchema = z.object({
 export const visitStatusSchema = z.enum(['scheduled', 'in_progress', 'completed', 'skipped']);
 
 export const visitActionSchema = z.enum(['start', 'complete', 'skip', 'reopen', 'delete']);
+
+const checklistKeys = [...TASKS, ...EXIT_STEPS].map(({ key }) => key);
+export const visitWorkInputSchema = z.object({
+    checklist: z.record(z.string(), z.boolean()).refine(
+        (value) => Object.keys(value).length === checklistKeys.length &&
+            checklistKeys.every((key) => typeof value[key] === 'boolean'),
+        'Checklist inválido',
+    ),
+    notes: z.string().trim().max(2000, 'Máximo 2000 caracteres'),
+    pendingReason: z.string().trim().max(1000, 'Máximo 1000 caracteres'),
+});
+export const pumpActionSchema = z.enum(['start', 'stop']);
 
 export const PREFERRED_DAYS = [
     'lunes',

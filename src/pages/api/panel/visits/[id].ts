@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { isJsonRequest, json, readJsonOrForm, redirectBack } from '@/lib/http';
 import { visitActionSchema, visitStatusSchema } from '@/lib/validation';
 import { applyVisitAction, type VisitAction } from '@/server/visits';
+import { VisitWorkError } from '@/server/visit-work';
 
 const idSchema = z.string().uuid();
 
@@ -33,6 +34,15 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
             : redirectBack(request, '/panel/agenda');
     } catch (error) {
         console.error('[visits.action]', error);
+        if (error instanceof VisitWorkError) {
+            if (isJsonRequest(request)) return json({ error: error.message }, error.status);
+            return new Response(null, {
+                status: 303,
+                headers: {
+                    Location: `/panel/visitas/${id.data}?error=${encodeURIComponent(error.message)}`,
+                },
+            });
+        }
         return json({ error: 'No se pudo actualizar la visita' }, 500);
     }
 };
@@ -53,6 +63,8 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
         return json({ ok: true, visit });
     } catch (error) {
         console.error('[visits.status]', error);
-        return json({ error: 'No se pudo actualizar la visita' }, 500);
+        return error instanceof VisitWorkError
+            ? json({ error: error.message }, error.status)
+            : json({ error: 'No se pudo actualizar la visita' }, 500);
     }
 };
