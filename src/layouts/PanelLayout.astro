@@ -1,0 +1,187 @@
+---
+import '@/styles/global.css';
+import { Home, Users, Inbox, Settings, LogOut, Route } from 'lucide-react';
+
+interface Props {
+    title: string;
+    description?: string;
+}
+
+const { title } = Astro.props;
+
+const path = Astro.url.pathname;
+const userEmail = Astro.locals.user?.email ?? '';
+const initial = (userEmail[0] ?? 'J').toUpperCase();
+
+const items = [
+    { href: '/panel', label: 'Hoy', icon: Home, exact: true },
+    { href: '/panel/clientes', label: 'Clientes', icon: Users, exact: false },
+    { href: '/panel/leads', label: 'Leads', icon: Inbox, exact: false },
+    { href: '/panel/ajustes', label: 'Ajustes', icon: Settings, exact: false },
+];
+
+const isActive = (href: string, exact: boolean) =>
+    exact ? path === href : path === href || path.startsWith(`${href}/`);
+---
+
+<!doctype html>
+<html lang="es">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+        <link rel="icon" type="image/png" href="/logoJyM.png" />
+        <meta name="robots" content="noindex, nofollow" />
+        <meta name="theme-color" content="#ffffff" />
+        <title>{title} | Panel JyM</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+            rel="stylesheet"
+        />
+    </head>
+    <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
+        <div class="lg:flex lg:min-h-screen">
+            <!-- Sidebar escritorio -->
+            <aside
+                class="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex"
+            >
+                <a href="/panel" class="flex h-20 items-center gap-3 border-b border-slate-100 px-5">
+                    <img
+                        src="/logoJyM.png"
+                        alt="JyM Mantenimientos"
+                        class="h-11 w-11 object-contain"
+                    />
+                    <div>
+                        <p class="text-sm font-extrabold leading-tight text-slate-900">
+                            JyM Mantenimientos
+                        </p>
+                        <p class="text-xs font-medium text-slate-500">Panel de operaciones</p>
+                    </div>
+                </a>
+
+                <nav class="flex-1 space-y-1 p-3">
+                    {
+                        items.map((item) => {
+                            const Icon = item.icon;
+                            const active = isActive(item.href, item.exact);
+                            return (
+                                <a
+                                    href={item.href}
+                                    aria-current={active ? 'page' : undefined}
+                                    class:list={[
+                                        'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition',
+                                        active
+                                            ? 'bg-sky-50 text-sky-800'
+                                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
+                                    ]}
+                                >
+                                    <Icon className="h-5 w-5" />
+                                    {item.label}
+                                </a>
+                            );
+                        })
+                    }
+                    <div class="flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400">
+                        <Route className="h-5 w-5" />
+                        Rutas
+                        <span class="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                            Pronto
+                        </span>
+                    </div>
+                </nav>
+
+                <div class="border-t border-slate-100 p-3">
+                    <div class="mb-2 flex items-center gap-3 rounded-xl px-3 py-2">
+                        <div
+                            class="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-800"
+                        >
+                            {initial}
+                        </div>
+                        <div class="min-w-0">
+                            <p class="truncate text-xs font-semibold text-slate-700">
+                                {userEmail || 'Sesión'}
+                            </p>
+                            <p class="text-[11px] text-slate-400">Administrador</p>
+                        </div>
+                    </div>
+                    <form method="POST" action="/api/auth/signout">
+                        <button
+                            type="submit"
+                            class="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-slate-500 transition hover:bg-red-50 hover:text-red-700"
+                        >
+                            <LogOut className="h-4 w-4" />
+                            Cerrar sesión
+                        </button>
+                    </form>
+                </div>
+            </aside>
+
+            <div class="flex min-h-screen flex-1 flex-col">
+                <!-- Barra superior móvil -->
+                <header
+                    class="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur lg:hidden"
+                >
+                    <a href="/panel" class="flex items-center gap-2">
+                        <img
+                            src="/logoJyM.png"
+                            alt="JyM Mantenimientos"
+                            class="h-9 w-9 object-contain"
+                        />
+                        <span class="text-sm font-extrabold tracking-tight">JyM</span>
+                    </a>
+                    <form method="POST" action="/api/auth/signout">
+                        <button
+                            type="submit"
+                            aria-label="Cerrar sesión"
+                            class="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100"
+                        >
+                            <LogOut className="h-5 w-5" />
+                        </button>
+                    </form>
+                </header>
+
+                <main class="flex-1 px-4 pb-28 pt-5 sm:px-6 lg:px-10 lg:py-8 lg:pb-10">
+                    <slot />
+                </main>
+
+                <!-- Navegación inferior móvil -->
+                <nav
+                    class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur lg:hidden"
+                    style="padding-bottom: env(safe-area-inset-bottom)"
+                >
+                    <div class="grid grid-cols-4">
+                        {
+                            items.map((item) => {
+                                const Icon = item.icon;
+                                const active = isActive(item.href, item.exact);
+                                return (
+                                    <a
+                                        href={item.href}
+                                        aria-current={active ? 'page' : undefined}
+                                        class:list={[
+                                            'flex flex-col items-center gap-1 py-2.5 text-[11px] font-semibold transition',
+                                            active ? 'text-sky-700' : 'text-slate-500',
+                                        ]}
+                                    >
+                                        <Icon className="h-5 w-5" />
+                                        {item.label}
+                                    </a>
+                                );
+                            })
+                        }
+                    </div>
+                </nav>
+            </div>
+        </div>
+    </body>
+</html>
+
+<style is:global>
+    :root {
+        --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+    }
+    body {
+        font-family: var(--font-sans);
+    }
+</style>

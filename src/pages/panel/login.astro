@@ -1,0 +1,119 @@
+---
+import AuthLayout from '@/layouts/AuthLayout.astro';
+
+const nextParam = Astro.url.searchParams.get('next') ?? '/panel';
+const next = nextParam.startsWith('/panel') ? nextParam : '/panel';
+
+let error = '';
+let email = '';
+
+if (Astro.request.method === 'POST') {
+    const form = await Astro.request.formData();
+    email = String(form.get('email') ?? '').trim().toLowerCase();
+    const password = String(form.get('password') ?? '');
+
+    if (!email || !password) {
+        error = 'Escribe tu correo y contraseña.';
+    } else {
+        const { error: authError } = await Astro.locals.supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
+
+        if (authError) {
+            error = 'Correo o contraseña incorrectos.';
+        } else {
+            return Astro.redirect(next);
+        }
+    }
+}
+
+const linkError = Astro.url.searchParams.get('error');
+if (linkError === 'no-access') {
+    error = 'Tu cuenta no tiene acceso al panel. Contacta al administrador.';
+} else if (linkError) {
+    error = 'El enlace expiró o no es válido. Intenta de nuevo.';
+}
+---
+
+<AuthLayout title="Iniciar sesión | JyM Mantenimientos">
+    <main class="w-full max-w-md">
+        <div class="mb-8 flex flex-col items-center text-center">
+            <img src="/logoJyM.png" alt="JyM Mantenimientos" class="h-20 w-20 object-contain" />
+            <h1 class="mt-4 text-2xl font-bold tracking-tight text-slate-900">
+                Panel de operaciones
+            </h1>
+            <p class="mt-2 text-sm text-slate-500">
+                Acceso privado para el equipo de JyM Mantenimientos.
+            </p>
+        </div>
+
+        <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/60 sm:p-8">
+            {
+                error && (
+                    <div
+                        role="alert"
+                        class="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+                    >
+                        {error}
+                    </div>
+                )
+            }
+
+            <form method="POST" class="space-y-5">
+                <div>
+                    <label for="email" class="mb-1.5 block text-sm font-semibold text-slate-700">
+                        Correo electrónico
+                    </label>
+                    <input
+                        id="email"
+                        name="email"
+                        type="email"
+                        autocomplete="email"
+                        required
+                        value={email}
+                        placeholder="tu@correo.com"
+                        class="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                    />
+                </div>
+
+                <div>
+                    <div class="mb-1.5 flex items-center justify-between">
+                        <label for="password" class="block text-sm font-semibold text-slate-700">
+                            Contraseña
+                        </label>
+                        <a
+                            href="/auth/recuperar"
+                            class="text-xs font-semibold text-sky-700 hover:underline"
+                        >
+                            ¿La olvidaste?
+                        </a>
+                    </div>
+                    <input
+                        id="password"
+                        name="password"
+                        type="password"
+                        autocomplete="current-password"
+                        required
+                        placeholder="••••••••"
+                        class="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                    />
+                </div>
+
+                <button
+                    type="submit"
+                    class="h-12 w-full rounded-xl bg-sky-700 text-base font-bold text-white transition hover:bg-sky-800 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sky-200"
+                >
+                    Entrar
+                </button>
+            </form>
+        </div>
+
+        <a
+            href="/"
+            class="mt-6 block text-center text-sm font-medium text-slate-500 transition hover:text-sky-700"
+        >
+            ← Volver al sitio web
+        </a>
+    </main>
+</AuthLayout>

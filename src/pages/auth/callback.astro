@@ -1,0 +1,15 @@
+---
+const code = Astro.url.searchParams.get('code');
+const nextParam = Astro.url.searchParams.get('next') ?? '/panel';
+const next = nextParam.startsWith('/panel') ? nextParam : '/panel';
+
+if (code) {
+    const { error } = await Astro.locals.supabase.auth.exchangeCodeForSession(code);
+    if (!error) {
+        return Astro.redirect(next);
+    }
+    console.error('[auth] exchangeCodeForSession:', error.message);
+}
+
+return Astro.redirect('/panel/login?error=link');
+---

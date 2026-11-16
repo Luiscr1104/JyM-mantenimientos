@@ -1,0 +1,28 @@
+---
+import PanelLayout from '@/layouts/PanelLayout.astro';
+import PageHeader from '@/components/panel/PageHeader.astro';
+import PropertyForm from '@/components/panel/PropertyForm';
+import { getClient } from '@/server/clients';
+
+const clientId = Astro.url.searchParams.get('clientId');
+if (!clientId) return Astro.redirect('/panel/clientes');
+
+const client = await getClient(clientId);
+if (!client) return Astro.redirect('/panel/clientes');
+---
+
+<PanelLayout title="Nueva propiedad">
+    <PageHeader
+        title="Nueva propiedad"
+        description={`Para ${client.name}. Marca la ubicación en el mapa para las rutas.`}
+    />
+
+    <div class="max-w-3xl">
+        <PropertyForm
+            client:load
+            mode="create"
+            clientId={client.id}
+            clientName={client.name}
+        />
+    </div>
+</PanelLayout>

@@ -1,0 +1,143 @@
+---
+import PanelLayout from '@/layouts/PanelLayout.astro';
+import PageHeader from '@/components/panel/PageHeader.astro';
+import MapPicker from '@/components/panel/MapPicker';
+import { getPropertyWithClient } from '@/server/properties';
+
+const id = Astro.params.id;
+if (!id) return Astro.redirect('/panel/clientes');
+
+const data = await getPropertyWithClient(id);
+if (!data) return Astro.redirect('/panel/clientes');
+
+const { property, client } = data;
+const hasLocation = property.lat != null && property.lng != null;
+
+const poolDetails = [
+    { label: 'Tipo de piscina', value: property.poolType },
+    { label: 'Volumen', value: property.volumeM3 != null ? `${property.volumeM3} m³` : null },
+    { label: 'Filtro', value: property.filterType },
+    { label: 'Sanitización', value: property.sanitation },
+].filter((item) => item.value);
+
+const accessDetails = [
+    { label: 'Código de portón', value: property.gateCode },
+    { label: 'Notas de acceso', value: property.accessNotes },
+    { label: 'Bomba y equipos', value: property.pumpNotes },
+].filter((item) => item.value);
+---
+
+<PanelLayout title={property.alias}>
+    <PageHeader title={property.alias} description={property.address}>
+        <a
+            href={`/panel/clientes/${client.id}`}
+            class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+        >
+            {client.name}
+        </a>
+        <a
+            href={`/panel/propiedades/${property.id}/editar`}
+            class="inline-flex h-10 items-center justify-center rounded-xl bg-sky-700 px-4 text-sm font-bold text-white transition hover:bg-sky-800"
+        >
+            Editar
+        </a>
+    </PageHeader>
+
+    <div class="grid gap-4 lg:grid-cols-5">
+        <div class="space-y-4 lg:col-span-2">
+            <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h2 class="mb-3 text-base font-extrabold text-slate-900">La piscina</h2>
+                {
+                    poolDetails.length === 0 ? (
+                        <p class="text-sm text-slate-500">
+                            Aún no hay datos de la piscina. Edita la propiedad para agregarlos.
+                        </p>
+                    ) : (
+                        <dl class="space-y-3">
+                            {poolDetails.map((item) => (
+                                <div>
+                                    <dt class="text-xs font-bold uppercase tracking-wide text-slate-400">
+                                        {item.label}
+                                    </dt>
+                                    <dd class="mt-0.5 text-sm font-medium text-slate-800">
+                                        {item.value}
+                                    </dd>
+                                </div>
+                            ))}
+                        </dl>
+                    )
+                }
+            </section>
+
+            <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h2 class="mb-3 text-base font-extrabold text-slate-900">Acceso</h2>
+                {
+                    accessDetails.length === 0 ? (
+                        <p class="text-sm text-slate-500">
+                            Agrega el código del portón y notas de acceso para no perder tiempo en
+                            la visita.
+                        </p>
+                    ) : (
+                        <dl class="space-y-3">
+                            {accessDetails.map((item) => (
+                                <div>
+                                    <dt class="text-xs font-bold uppercase tracking-wide text-slate-400">
+                                        {item.label}
+                                    </dt>
+                                    <dd class="mt-0.5 whitespace-pre-line text-sm font-medium text-slate-800">
+                                        {item.value}
+                                    </dd>
+                                </div>
+                            ))}
+                        </dl>
+                    )
+                }
+            </section>
+        </div>
+
+        <section class="lg:col-span-3">
+            <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div class="mb-3 flex items-center justify-between gap-3">
+                    <h2 class="text-base font-extrabold text-slate-900">Ubicación</h2>
+                    {
+                        hasLocation && (
+                            <a
+                                href={`https://www.google.com/maps/dir/?api=1&destination=${property.lat},${property.lng}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="text-xs font-bold text-sky-700 hover:underline"
+                            >
+                                Cómo llegar →
+                            </a>
+                        )
+                    }
+                </div>
+
+                {
+                    hasLocation ? (
+                        <MapPicker
+                            client:only="react"
+                            lat={property.lat}
+                            lng={property.lng}
+                            readOnly
+                            height={360}
+                        />
+                    ) : (
+                        <div class="flex h-72 flex-col items-center justify-center rounded-xl border border-dashed border-amber-300 bg-amber-50 px-6 text-center">
+                            <p class="text-sm font-bold text-amber-800">Sin ubicación marcada</p>
+                            <p class="mt-1 text-xs text-amber-700">
+                                Edita la propiedad y toca el mapa para guardar el punto exacto.
+                            </p>
+                            <a
+                                href={`/panel/propiedades/${property.id}/editar`}
+                                class="mt-3 inline-flex h-9 items-center justify-center rounded-lg bg-amber-600 px-3 text-xs font-bold text-white"
+                            >
+                                Marcar ubicación
+                            </a>
+                        </div>
+                    )
+                }
+            </div>
+        </section>
+    </div>
+</PanelLayout>

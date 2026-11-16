@@ -4,14 +4,42 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Phone, Mail, MapPin, CheckCircle2 } from "lucide-react"
+import { Phone, Mail, MapPin, CheckCircle2, AlertCircle } from "lucide-react"
 
 export default function ContactForm() {
     const [isSubmitted, setIsSubmitted] = React.useState(false)
+    const [isSubmitting, setIsSubmitting] = React.useState(false)
+    const [error, setError] = React.useState("")
+    const formRef = React.useRef<HTMLFormElement>(null)
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault()
-        setIsSubmitted(true)
+        setError("")
+        setIsSubmitting(true)
+
+        const form = e.currentTarget
+        const payload = Object.fromEntries(new FormData(form).entries())
+
+        try {
+            const response = await fetch("/api/leads", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            })
+            const data = await response.json().catch(() => ({}))
+
+            if (!response.ok) {
+                setError(data.error ?? "No se pudo enviar el mensaje. Intenta por WhatsApp.")
+                return
+            }
+
+            formRef.current?.reset()
+            setIsSubmitted(true)
+        } catch {
+            setError("Error de conexión. Revisa tu internet o escríbenos por WhatsApp.")
+        } finally {
+            setIsSubmitting(false)
+        }
     }
 
     return (
@@ -80,32 +108,52 @@ export default function ContactForm() {
                                         </Button>
                                     </motion.div>
                                 ) : (
-                                    <form className="space-y-6" onSubmit={handleSubmit}>
+                                    <form ref={formRef} className="space-y-6" onSubmit={handleSubmit}>
+                                        {error && (
+                                            <div
+                                                role="alert"
+                                                className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+                                            >
+                                                <AlertCircle className="h-5 w-5 shrink-0" />
+                                                <span>{error}</span>
+                                            </div>
+                                        )}
+
+                                        <div className="hidden" aria-hidden="true">
+                                            <label htmlFor="website">No llenar</label>
+                                            <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" />
+                                        </div>
+
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                             <div className="space-y-2">
                                                 <Label htmlFor="name" className="text-sm font-bold">Nombre Completo</Label>
-                                                <Input id="name" placeholder="Ej. Juan Pérez" className="rounded-xl h-12" required />
+                                                <Input id="name" name="name" placeholder="Ej. Juan Pérez" className="rounded-xl h-12" required />
                                             </div>
                                             <div className="space-y-2">
                                                 <Label htmlFor="email" className="text-sm font-bold">Email</Label>
-                                                <Input id="email" type="email" placeholder="hola@ejemplo.com" className="rounded-xl h-12" required />
+                                                <Input id="email" name="email" type="email" placeholder="hola@ejemplo.com" className="rounded-xl h-12" required />
                                             </div>
                                         </div>
                                         <div className="space-y-2">
                                             <Label htmlFor="phone" className="text-sm font-bold">Número de Teléfono</Label>
-                                            <Input id="phone" placeholder="+506 7102-9497" className="rounded-xl h-12" required />
+                                            <Input id="phone" name="phone" type="tel" placeholder="+506 7102-9497" className="rounded-xl h-12" required />
                                         </div>
                                         <div className="space-y-2">
                                             <Label htmlFor="message" className="text-sm font-bold">¿Cómo podemos ayudarte?</Label>
                                             <textarea
                                                 id="message"
+                                                name="message"
                                                 className="flex min-h-[120px] w-full rounded-xl border border-input bg-background px-4 py-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all focus:border-primary"
                                                 placeholder="Ej. Mi piscina necesita una limpieza profunda urgente..."
                                                 required
                                             ></textarea>
                                         </div>
-                                        <Button type="submit" className="w-full h-14 text-lg font-bold rounded-xl shadow-lg shadow-primary/30 hover:scale-[1.02] transition-transform">
-                                            Enviar Mensaje
+                                        <Button
+                                            type="submit"
+                                            disabled={isSubmitting}
+                                            className="w-full h-14 text-lg font-bold rounded-xl shadow-lg shadow-primary/30 hover:scale-[1.02] transition-transform disabled:opacity-60 disabled:hover:scale-100"
+                                        >
+                                            {isSubmitting ? "Enviando…" : "Enviar Mensaje"}
                                         </Button>
                                     </form>
                                 )}

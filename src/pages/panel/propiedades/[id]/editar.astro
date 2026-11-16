@@ -1,0 +1,42 @@
+---
+import PanelLayout from '@/layouts/PanelLayout.astro';
+import PageHeader from '@/components/panel/PageHeader.astro';
+import PropertyForm from '@/components/panel/PropertyForm';
+import { getPropertyWithClient } from '@/server/properties';
+
+const id = Astro.params.id;
+if (!id) return Astro.redirect('/panel/clientes');
+
+const data = await getPropertyWithClient(id);
+if (!data) return Astro.redirect('/panel/clientes');
+
+const { property, client } = data;
+---
+
+<PanelLayout title={`Editar ${property.alias}`}>
+    <PageHeader title="Editar propiedad" description={`${property.alias} · ${client.name}`} />
+
+    <div class="max-w-3xl">
+        <PropertyForm
+            client:load
+            mode="edit"
+            clientId={client.id}
+            clientName={client.name}
+            property={{
+                id: property.id,
+                clientId: property.clientId,
+                alias: property.alias,
+                address: property.address,
+                lat: property.lat,
+                lng: property.lng,
+                gateCode: property.gateCode,
+                accessNotes: property.accessNotes,
+                poolType: property.poolType,
+                volumeM3: property.volumeM3,
+                pumpNotes: property.pumpNotes,
+                filterType: property.filterType,
+                sanitation: property.sanitation,
+            }}
+        />
+    </div>
+</PanelLayout>

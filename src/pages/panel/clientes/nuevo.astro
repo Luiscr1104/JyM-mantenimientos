@@ -1,0 +1,16 @@
+---
+import PanelLayout from '@/layouts/PanelLayout.astro';
+import PageHeader from '@/components/panel/PageHeader.astro';
+import ClientForm from '@/components/panel/ClientForm';
+---
+
+<PanelLayout title="Nuevo cliente">
+    <PageHeader
+        title="Nuevo cliente"
+        description="Después de crearlo podrás agregar una o varias propiedades."
+    />
+
+    <div class="max-w-3xl">
+        <ClientForm client:load mode="create" />
+    </div>
+</PanelLayout>

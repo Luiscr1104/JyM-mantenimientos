@@ -1,0 +1,176 @@
+---
+import PanelLayout from '@/layouts/PanelLayout.astro';
+import PageHeader from '@/components/panel/PageHeader.astro';
+import EmptyState from '@/components/panel/EmptyState.astro';
+import { getClient } from '@/server/clients';
+import { listPropertiesByClient } from '@/server/properties';
+import { formatDate } from '@/lib/format';
+
+const id = Astro.params.id;
+if (!id) return Astro.redirect('/panel/clientes');
+
+const client = await getClient(id);
+if (!client) return Astro.redirect('/panel/clientes');
+
+const properties = await listPropertiesByClient(client.id);
+const phoneDigits = client.phone?.replace(/\D/g, '');
+---
+
+<PanelLayout title={client.name}>
+    <PageHeader title={client.name} description="Ficha del cliente y sus propiedades.">
+        <a
+            href={`/panel/clientes/${client.id}/editar`}
+            class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+        >
+            Editar
+        </a>
+        <a
+            href={`/panel/propiedades/nuevo?clientId=${client.id}`}
+            class="inline-flex h-10 items-center justify-center rounded-xl bg-sky-700 px-4 text-sm font-bold text-white transition hover:bg-sky-800"
+        >
+            + Propiedad
+        </a>
+    </PageHeader>
+
+    <div class="grid gap-4 lg:grid-cols-3">
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="mb-3 flex items-center gap-2">
+                <h2 class="text-base font-extrabold text-slate-900">Contacto</h2>
+                <span
+                    class:list={[
+                        'rounded-full border px-2 py-0.5 text-[11px] font-bold',
+                        client.status === 'active'
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : 'border-slate-200 bg-slate-50 text-slate-500',
+                    ]}
+                >
+                    {client.status === 'active' ? 'Activo' : 'Inactivo'}
+                </span>
+            </div>
+
+            <dl class="space-y-3 text-sm">
+                <div>
+                    <dt class="text-xs font-bold uppercase tracking-wide text-slate-400">Teléfono</dt>
+                    <dd class="mt-0.5 text-slate-800">
+                        {
+                            client.phone ? (
+                                <a
+                                    href={`https://wa.me/${phoneDigits}?text=${encodeURIComponent(
+                                        `Hola ${client.name}, le escribo de JyM Mantenimientos.`,
+                                    )}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="font-semibold text-sky-700 hover:underline"
+                                >
+                                    {client.phone} · WhatsApp
+                                </a>
+                            ) : (
+                                <span class="text-slate-400">Sin teléfono</span>
+                            )
+                        }
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-bold uppercase tracking-wide text-slate-400">Correo</dt>
+                    <dd class="mt-0.5 text-slate-800">
+                        {
+                            client.email ? (
+                                <a href={`mailto:${client.email}`} class="hover:underline">
+                                    {client.email}
+                                </a>
+                            ) : (
+                                <span class="text-slate-400">Sin correo</span>
+                            )
+                        }
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-bold uppercase tracking-wide text-slate-400">Cliente desde</dt>
+                    <dd class="mt-0.5 text-slate-800">{formatDate(client.createdAt)}</dd>
+                </div>
+            </dl>
+
+            {
+                client.notes && (
+                    <div class="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+                        <p class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-400">
+                            Notas
+                        </p>
+                        {client.notes}
+                    </div>
+                )
+            }
+        </section>
+
+        <section class="lg:col-span-2">
+            <div class="mb-3 flex items-center justify-between">
+                <h2 class="text-base font-extrabold text-slate-900">
+                    Propiedades
+                    <span class="ml-1 text-sm font-semibold text-slate-400">
+                        ({properties.length})
+                    </span>
+                </h2>
+            </div>
+
+            {
+                properties.length === 0 ? (
+                    <EmptyState
+                        title="Este cliente no tiene propiedades"
+                        description="Agrega la piscina con su dirección y ubicación para poder incluirla en las rutas."
+                    >
+                        <a
+                            href={`/panel/propiedades/nuevo?clientId=${client.id}`}
+                            class="inline-flex h-10 items-center justify-center rounded-xl bg-sky-700 px-4 text-sm font-bold text-white"
+                        >
+                            + Agregar propiedad
+                        </a>
+                    </EmptyState>
+                ) : (
+                    <ul class="grid gap-3">
+                        {properties.map((property) => (
+                            <li>
+                                <a
+                                    href={`/panel/propiedades/${property.id}`}
+                                    class="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-sky-300 hover:shadow-md"
+                                >
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <p class="truncate text-base font-extrabold text-slate-900">
+                                                {property.alias}
+                                            </p>
+                                            <p class="mt-0.5 truncate text-sm text-slate-500">
+                                                {property.address}
+                                            </p>
+                                        </div>
+                                        <span
+                                            class:list={[
+                                                'shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-bold',
+                                                property.lat != null && property.lng != null
+                                                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                                    : 'border-amber-200 bg-amber-50 text-amber-700',
+                                            ]}
+                                        >
+                                            {property.lat != null && property.lng != null
+                                                ? 'Con ubicación'
+                                                : 'Sin ubicación'}
+                                        </span>
+                                    </div>
+                                    <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                                        {property.poolType && <span>{property.poolType}</span>}
+                                        {property.volumeM3 != null && (
+                                            <span>{property.volumeM3} m³</span>
+                                        )}
+                                        {property.sanitation && <span>{property.sanitation}</span>}
+                                        {property.filterType && (
+                                            <span>Filtro: {property.filterType}</span>
+                                        )}
+                                    </div>
+                                </a>
+                            </li>
+                        ))}
+                    </ul>
+                )
+            }
+        </section>
+    </div>
+</PanelLayout>

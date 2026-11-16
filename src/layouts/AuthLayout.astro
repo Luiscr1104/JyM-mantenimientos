@@ -1,0 +1,50 @@
+---
+import '@/styles/global.css';
+
+interface Props {
+    title: string;
+    description?: string;
+}
+
+const { title, description = 'Acceso al panel de JyM Mantenimientos' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="es">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link rel="icon" type="image/png" href="/logoJyM.png" />
+        <meta name="robots" content="noindex, nofollow" />
+        <meta name="theme-color" content="#0369a1" />
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+            rel="stylesheet"
+        />
+    </head>
+    <body class="min-h-screen bg-slate-50 font-sans antialiased">
+        <div class="relative flex min-h-screen flex-col items-center justify-center px-4 py-10">
+            <div
+                class="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-sky-50 via-blue-50 to-white"
+            >
+            </div>
+            <slot />
+            <p class="mt-8 text-xs text-slate-400">
+                JyM Mantenimientos · Acceso privado
+            </p>
+        </div>
+    </body>
+</html>
+
+<style is:global>
+    :root {
+        --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+    }
+    body {
+        font-family: var(--font-sans);
+    }
+</style>

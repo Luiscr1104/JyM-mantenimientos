@@ -5,6 +5,8 @@ import Footer from "@/components/Footer";
 import { getCollection, type CollectionEntry } from "astro:content";
 import "@/styles/global.css";
 
+export const prerender = true;
+
 const allBlogPosts = await getCollection("blog");
 type BlogPost = CollectionEntry<"blog">;
 const sortedPosts = allBlogPosts.sort(

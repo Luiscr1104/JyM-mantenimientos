@@ -1,4 +1,7 @@
 User-agent: *
 Allow: /
+Disallow: /panel
+Disallow: /api
+Disallow: /auth
 
 Sitemap: https://jymmantenimientos.com/sitemap-index.xml
