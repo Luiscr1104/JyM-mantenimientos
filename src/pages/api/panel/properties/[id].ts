@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { isJsonRequest, json, readJsonOrForm } from '@/lib/http';
 import { firstError, propertyInputSchema } from '@/lib/validation';
-import { updateProperty } from '@/server/properties';
+import { deletePropertySafely, PropertyDeletionError, updateProperty } from '@/server/properties';
 
 const idSchema = z.string().uuid();
 
@@ -33,3 +33,28 @@ const handler: APIRoute = async ({ params, request, locals, redirect }) => {
 
 export const PUT = handler;
 export const PATCH = handler;
+
+export const DELETE: APIRoute = async ({ params, request, locals }) => {
+    if (!locals.profile) return json({ error: 'No autorizado' }, 401);
+    const id = z.uuid().safeParse(params.id);
+    if (!id.success) return json({ error: 'Propiedad inválida' }, 400);
+
+    let input: unknown;
+    try { input = await request.json(); } catch { return json({ error: 'Confirmación inválida' }, 400); }
+    const parsed = z.object({
+        clientId: z.uuid(),
+        confirmation: z.literal('ELIMINAR'),
+    }).safeParse(input);
+    if (!parsed.success) return json({ error: 'Confirma el cliente y escribe ELIMINAR.' }, 400);
+
+    try {
+        const result = await deletePropertySafely(id.data, parsed.data.clientId);
+        return json({ ok: true, ...result });
+    } catch (error) {
+        if (error instanceof PropertyDeletionError) {
+            return json({ error: error.message }, error.status);
+        }
+        console.error('[properties.delete]', error);
+        return json({ error: 'No se pudo eliminar la propiedad' }, 500);
+    }
+};

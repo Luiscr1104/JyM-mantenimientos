@@ -31,6 +31,11 @@ const phoneDigits = client.phone?.replace(/\D/g, '');
             + Propiedad
         </a>
     </PageHeader>
+    {Astro.url.searchParams.get('ok') === 'property-deleted' && (
+        <div role="status" class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">
+            Propiedad duplicada eliminada. Las demás propiedades del cliente siguen intactas.
+        </div>
+    )}
 
     <div class="grid gap-4 lg:grid-cols-3">
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

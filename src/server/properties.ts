@@ -1,6 +1,64 @@
 import { asc, count, desc, eq } from 'drizzle-orm';
-import { clients, db, properties, routePlans, visits } from '@/db';
+import { clients, db, properties, routePlans, visitProducts, visits, waterFillTasks } from '@/db';
 import { nullIfEmpty, type PropertyInput } from '@/lib/validation';
+import { propertyDeletionIssue } from '@/lib/property-deletion';
+
+export class PropertyDeletionError extends Error {
+    constructor(message: string, public status = 409) {
+        super(message);
+    }
+}
+
+export async function getPropertyDeletionStatus(propertyId: string) {
+    const [relatedVisits, product, waterTasks] = await Promise.all([
+        db.select().from(visits).where(eq(visits.propertyId, propertyId)),
+        db.select({ id: visitProducts.id }).from(visitProducts)
+            .innerJoin(visits, eq(visitProducts.visitId, visits.id))
+            .where(eq(visits.propertyId, propertyId)).limit(1),
+        db.select({ closedAt: waterFillTasks.closedAt }).from(waterFillTasks)
+            .where(eq(waterFillTasks.propertyId, propertyId)),
+    ]);
+    return {
+        scheduledVisits: relatedVisits.length,
+        issue: propertyDeletionIssue({
+            visits: relatedVisits,
+            hasProducts: product.length > 0,
+            hasWaterTask: waterTasks.length > 0,
+            hasOpenWaterTask: waterTasks.some(({ closedAt }) => closedAt === null),
+        }),
+    };
+}
+
+export async function deletePropertySafely(propertyId: string, clientId: string) {
+    return db.transaction(async (tx) => {
+        const [property] = await tx.select().from(properties)
+            .where(eq(properties.id, propertyId)).for('update');
+        if (!property || property.clientId !== clientId) {
+            throw new PropertyDeletionError('Propiedad no encontrada en este cliente.', 404);
+        }
+
+        const relatedVisits = await tx.select().from(visits)
+            .where(eq(visits.propertyId, propertyId)).for('update');
+        const product = await tx.select({ id: visitProducts.id }).from(visitProducts)
+            .innerJoin(visits, eq(visitProducts.visitId, visits.id))
+            .where(eq(visits.propertyId, propertyId)).limit(1);
+        const waterTasks = await tx.select({ closedAt: waterFillTasks.closedAt }).from(waterFillTasks)
+            .where(eq(waterFillTasks.propertyId, propertyId)).for('update');
+        const issue = propertyDeletionIssue({
+            visits: relatedVisits,
+            hasProducts: product.length > 0,
+            hasWaterTask: waterTasks.length > 0,
+            hasOpenWaterTask: waterTasks.some(({ closedAt }) => closedAt === null),
+        });
+        if (issue) throw new PropertyDeletionError(issue);
+
+        for (const date of new Set(relatedVisits.map((visit) => visit.scheduledFor))) {
+            await tx.delete(routePlans).where(eq(routePlans.visitDate, date));
+        }
+        await tx.delete(properties).where(eq(properties.id, propertyId));
+        return { clientId: property.clientId, removedVisits: relatedVisits.length };
+    });
+}
 
 export async function listPropertiesByClient(clientId: string) {
     return db

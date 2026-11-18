@@ -11,6 +11,7 @@
     "test:stage2": "tsx --test tests/stage2.test.ts",
     "test:stage2c": "tsx --test tests/stage2c.test.ts",
     "test:followups": "tsx --test tests/visit-followups.test.ts",
+    "test:properties": "tsx --test tests/property-deletion.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",

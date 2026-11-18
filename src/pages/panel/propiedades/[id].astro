@@ -3,6 +3,8 @@ import PanelLayout from '@/layouts/PanelLayout.astro';
 import PageHeader from '@/components/panel/PageHeader.astro';
 import MapPicker from '@/components/panel/MapPicker';
 import { getPropertyWithClient } from '@/server/properties';
+import { getPropertyDeletionStatus } from '@/server/properties';
+import PropertyDeleteForm from '@/components/panel/PropertyDeleteForm';
 import { getServicePlan } from '@/server/service-plans';
 import { listPropertyProducts } from '@/server/visit-products';
 import { getOpenWaterTaskForProperty, listWaterTaskHistory } from '@/server/water-fill';
@@ -18,6 +20,7 @@ const data = await getPropertyWithClient(id);
 if (!data) return Astro.redirect('/panel/clientes');
 
 const { property, client } = data;
+const deletion = await getPropertyDeletionStatus(property.id);
 const plan = await getServicePlan(property.id);
 const [productHistory, waterHistory, activeWaterTask] = await Promise.all([
     listPropertyProducts(property.id),
@@ -197,6 +200,11 @@ const accessDetails = [
                     )
                 }
             </section>
+            <PropertyDeleteForm client:load
+                propertyId={property.id} clientId={client.id}
+                clientName={client.name} alias={property.alias} address={property.address}
+                scheduledVisits={deletion.scheduledVisits} issue={deletion.issue}
+            />
         </div>
 
         <section class="lg:col-span-3">
