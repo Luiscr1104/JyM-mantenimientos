@@ -66,7 +66,7 @@ export default function ClientForm({ mode = 'create', client }: Props) {
     return (
         <form
             onSubmit={handleSubmit}
-            className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+            className="space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"
         >
             {error && (
                 <div

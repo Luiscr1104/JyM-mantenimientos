@@ -33,8 +33,7 @@ const totalProperties = await countProperties();
 
 const suggestions = dayVisits.length === 0 ? await suggestVisits(today) : [];
 const completed = dayVisits.filter((row) => row.visit.status === 'completed').length;
-const pending = dayVisits.filter((row) => row.visit.status === 'scheduled').length;
-const remaining = dayVisits.filter((row) => row.visit.status === 'scheduled' || row.visit.status === 'in_progress').length;
+const pending = dayVisits.filter((row) => row.visit.status === 'scheduled' || row.visit.status === 'in_progress').length;
 const hasBase = settings.baseLat != null && settings.baseLng != null;
 
 const ok = Astro.url.searchParams.get('ok');
@@ -154,22 +153,43 @@ const stats = [
                     )
                 ) : (
                     <div>
-                        <div class="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wide text-sky-700">
-                            <span>
-                            {dayVisits.length} {dayVisits.length === 1 ? 'visita' : 'visitas'}
-                            </span>
-                            <span class="text-slate-300">·</span>
-                            <span>{pending} pendientes</span>
-                            <span class="text-slate-300">·</span>
-                            <span>{completed} completadas</span>
+                        <div class="grid gap-2 sm:grid-cols-3">
+                            <div class:list={[
+                                'rounded-2xl border p-4',
+                                pending > 0
+                                    ? 'border-amber-200 bg-amber-50 text-amber-900'
+                                    : 'border-emerald-200 bg-emerald-50 text-emerald-900',
+                            ]}>
+                                <p class="text-xs font-bold uppercase tracking-wide">
+                                    {pending === 1 ? 'Pendiente' : 'Pendientes'}
+                                </p>
+                                <p class="mt-1 text-4xl font-extrabold leading-none">{pending}</p>
+                                <p class="mt-2 text-xs font-medium">
+                                    {pending === 0 ? 'Todo al día' : 'Por completar hoy'}
+                                </p>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 sm:col-span-2">
+                                <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                                    <p class="text-xs font-bold uppercase tracking-wide text-slate-500">
+                                        {dayVisits.length === 1 ? 'Visita' : 'Visitas'}
+                                    </p>
+                                    <p class="mt-1 text-2xl font-extrabold text-slate-900">{dayVisits.length}</p>
+                                </div>
+                                <div class="rounded-2xl border border-emerald-200 bg-white p-4">
+                                    <p class="text-xs font-bold uppercase tracking-wide text-emerald-700">
+                                        {completed === 1 ? 'Completada' : 'Completadas'}
+                                    </p>
+                                    <p class="mt-1 text-2xl font-extrabold text-emerald-800">{completed}</p>
+                                </div>
+                            </div>
                         </div>
 
-                        <h2 class="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">
-                            {remaining === 0 ? 'Jornada terminada' : routePlan ? 'Tu ruta está lista' : 'Arma la ruta del día'}
+                        <h2 class="mt-5 text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl">
+                            {pending === 0 ? 'Jornada terminada' : routePlan ? 'Tu ruta está lista' : 'Arma la ruta del día'}
                         </h2>
 
-                        {remaining === 0 ? (
-                            <p class="mt-1 text-sm text-slate-600">Todas las visitas del día están completadas.</p>
+                        {pending === 0 ? (
+                            <p class="mt-1 text-sm text-slate-600">No quedan visitas pendientes hoy.</p>
                         ) : routePlan ? (
                             <p class="mt-1 text-sm text-slate-600">
                                 {formatDistance(routePlan.distanceMeters)} ·{' '}
@@ -183,7 +203,7 @@ const stats = [
                         )}
 
                         <div class="mt-5 flex flex-col gap-2 sm:flex-row">
-                            {remaining === 0 ? null : routePlan ? (
+                            {pending === 0 ? null : routePlan ? (
                                 <a
                                     href={`/panel/ruta?date=${today}`}
                                     class="panel-btn panel-btn-primary panel-btn-main"
