@@ -51,7 +51,7 @@ export default function PropertyDeleteForm({
                         Solo se eliminará esta propiedad. El cliente y sus otras propiedades permanecerán.
                     </p>
                     <button type="button" onClick={() => setOpen((previous) => !previous)}
-                        className="mt-4 min-h-11 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-700">
+                        className="panel-btn panel-btn-danger mt-4">
                         {open ? 'Cancelar' : 'Eliminar esta propiedad…'}
                     </button>
                     {open && (
@@ -73,7 +73,7 @@ export default function PropertyDeleteForm({
                             </label>
                             {error && <p role="alert" className="text-sm font-semibold text-red-700">{error}</p>}
                             <button type="submit" disabled={busy || confirmation !== 'ELIMINAR'}
-                                className="min-h-12 w-full rounded-xl bg-red-700 px-5 text-sm font-bold text-white disabled:opacity-50 sm:w-auto">
+                                className="panel-btn w-full bg-red-700 text-white hover:bg-red-800 sm:w-auto">
                                 {busy ? 'Eliminando…' : 'Eliminar propiedad definitivamente'}
                             </button>
                         </form>

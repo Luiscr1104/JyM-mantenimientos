@@ -1,6 +1,7 @@
 import * as React from 'react';
 import VisitProducts, { type ProductEntry } from './VisitProducts';
 import WaterFillWidget, { type OpenWaterTask } from './WaterFillWidget';
+import { visitStatusLabel, visitStatusStyle } from '@/lib/format';
 import {
     EXIT_STEPS,
     TASKS,
@@ -205,6 +206,12 @@ export default function VisitWorkspace({
 
     return (
         <div className="space-y-5">
+            <p className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                Estado:
+                <span aria-live="polite" className={`rounded-full border px-3 py-1 text-xs font-bold ${visitStatusStyle(status)}`}>
+                    {visitStatusLabel(status)}
+                </span>
+            </p>
             {error && (
                 <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">
                     {error}
@@ -214,7 +221,7 @@ export default function VisitWorkspace({
                 <section className="rounded-2xl border border-sky-200 bg-sky-50 p-5">
                     <p className="mb-4 text-sm text-sky-900">Cuando llegues, inicia esta visita para registrar el trabajo.</p>
                     <button type="button" onClick={start} disabled={busy}
-                        className="h-14 w-full rounded-2xl bg-sky-700 px-6 text-base font-extrabold text-white disabled:opacity-50 sm:w-auto">
+                        className="panel-btn panel-btn-primary panel-btn-main w-full sm:w-auto">
                         {busy ? 'Iniciando…' : 'Iniciar visita'}
                     </button>
                 </section>
@@ -230,14 +237,22 @@ export default function VisitWorkspace({
                     Visita omitida. Reábrela desde la agenda si necesitas trabajar en ella.
                 </div>
             )}
+            {editable && (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <span className="font-semibold text-slate-700">Trabajo: {completedTasks}/{TASKS.length} pasos</span>
+                    <a href="#antes-de-salir" className="inline-flex min-h-12 items-center font-bold text-sky-800 underline">
+                        Ir a «Antes de salir» ↓
+                    </a>
+                </div>
+            )}
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            {(editable || status === 'completed') && <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <div className="flex items-center justify-between gap-2">
                     <h2 className="text-lg font-extrabold text-slate-900">Mantenimiento</h2>
                     <span className="text-sm font-bold text-sky-700">{completedTasks}/{TASKS.length}</span>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                    Lista provisional: José debe confirmar los pasos reales de cada servicio.
+                    Lista de trabajo provisional; confirmar los pasos con José.
                 </p>
                 <div className="mt-4 space-y-2">
                     {TASKS.map(({ key, label }) => (
@@ -248,15 +263,16 @@ export default function VisitWorkspace({
                         </label>
                     ))}
                 </div>
-            </section>
+            </section>}
 
-            <VisitProducts visitId={id} editable={editable || status === 'completed'} initial={initialProducts} />
+            {(editable || status === 'completed') && <VisitProducts
+                visitId={id} editable={editable || status === 'completed'} initial={initialProducts} />}
 
-            <WaterFillWidget initial={initialWaterTasks}
+            {(editable || status === 'completed' || initialWaterTasks.length > 0) && <WaterFillWidget initial={initialWaterTasks}
                 visitId={id} propertyId={propertyId} propertyName={propertyName}
-                canCreate={editable} />
+                canCreate={editable} />}
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            {(editable || status === 'completed') && <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <h2 className="text-lg font-extrabold text-slate-900">Temporizador de bomba</h2>
                 <p className="mt-1 text-xs text-slate-500">
                     Solo registra tiempo. No controla la bomba ni avisa con la aplicación cerrada.
@@ -266,20 +282,20 @@ export default function VisitWorkspace({
                 </p>
                 {!pumpStartedAt && editable && (
                     <button type="button" disabled={busy} onClick={() => pump('start')}
-                        className="h-12 w-full rounded-xl bg-sky-700 px-5 text-sm font-bold text-white disabled:opacity-50 sm:w-auto">
+                        className="panel-btn panel-btn-primary w-full sm:w-auto">
                         Registrar encendido
                     </button>
                 )}
                 {running && editable && (
                     <button type="button" disabled={busy} onClick={() => pump('stop')}
-                        className="h-12 w-full rounded-xl bg-amber-600 px-5 text-sm font-bold text-white disabled:opacity-50 sm:w-auto">
+                        className="panel-btn w-full bg-amber-600 text-white hover:bg-amber-700 sm:w-auto">
                         Registrar apagado
                     </button>
                 )}
                 {pumpStoppedAt && <p className="text-sm font-semibold text-emerald-800">Tiempo registrado. Verifica físicamente el estado del equipo.</p>}
-            </section>
+            </section>}
 
-            <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            {(editable || status === 'completed') && <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <div>
                     <label htmlFor="visit-notes" className="block text-sm font-bold text-slate-800">Notas de la visita</label>
                     <textarea id="visit-notes" rows={3} maxLength={2000} disabled={!editable}
@@ -298,9 +314,9 @@ export default function VisitWorkspace({
                             className="mt-2 w-full rounded-xl border border-amber-300 p-3 text-sm text-slate-900 outline-none focus:border-amber-600 disabled:bg-slate-50" />
                     </div>
                 )}
-            </section>
+            </section>}
 
-            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+            {(editable || status === 'completed') && <section id="antes-de-salir" className="scroll-mt-20 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm sm:p-5">
                 <h2 className="text-lg font-extrabold text-slate-900">Antes de salir</h2>
                 <p className="mt-1 text-sm text-amber-900">Confirma el estado real; no asumas que los equipos deben quedar apagados.</p>
                 <div className="mt-4 space-y-2">
@@ -312,18 +328,18 @@ export default function VisitWorkspace({
                         </label>
                     ))}
                 </div>
-            </section>
+            </section>}
 
             {editable && (
                 <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                     <p aria-live="polite" className="text-sm font-semibold text-slate-600">{saveLabels[saveState]}</p>
                     <button type="button" disabled={busy} onClick={() => void saveNow()}
-                        className="h-11 w-full rounded-xl border border-sky-300 bg-sky-50 px-5 text-sm font-bold text-sky-800 disabled:opacity-50 sm:w-auto">
+                        className="panel-btn w-full border border-sky-300 bg-sky-50 text-sky-800 sm:w-auto">
                         Guardar ahora
                     </button>
                     {issue && <p className="text-sm font-semibold text-amber-800">{issue}</p>}
                     <button type="button" disabled={busy || Boolean(issue)} onClick={complete}
-                        className="h-14 w-full rounded-2xl bg-emerald-700 px-6 text-base font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">
+                        className="panel-btn panel-btn-main w-full bg-emerald-700 text-white hover:bg-emerald-800 sm:w-auto">
                         {busy ? 'Guardando…' : 'Completar visita'}
                     </button>
                 </section>

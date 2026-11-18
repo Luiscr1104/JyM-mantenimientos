@@ -42,7 +42,7 @@ export default function VisitProducts({ visitId, editable, initial }: Props) {
 
     const unit = productInfo(product).unit;
     return (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <h2 className="text-lg font-extrabold text-slate-900">Productos aplicados</h2>
             <p className="mt-1 text-xs text-slate-500">Registra lo que se aplicó realmente a esta piscina.</p>
 
@@ -61,7 +61,7 @@ export default function VisitProducts({ visitId, editable, initial }: Props) {
                                             void update({ action: 'delete', productId: entry.id });
                                         }
                                     }}
-                                    className="rounded-lg px-2 py-1 font-bold text-red-700 disabled:opacity-50">
+                                    className="inline-flex min-h-12 items-center rounded-lg px-2 font-bold text-red-700 disabled:opacity-50">
                                     Quitar
                                 </button>}
                             </span>
@@ -71,12 +71,12 @@ export default function VisitProducts({ visitId, editable, initial }: Props) {
             ) : <p className="mt-4 text-sm text-slate-500">Aún no hay productos registrados.</p>}
 
             {error && <p role="alert" className="mt-3 text-sm font-semibold text-red-700">{error}</p>}
-            {editable && <form className="mt-5 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-[1fr_8rem_auto]"
+            {editable && <form className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-slate-100 pt-4 sm:grid-cols-[1fr_8rem_auto]"
                 onSubmit={(event) => {
                     event.preventDefault();
                     void update({ action: 'add', product, quantity: Number(quantity) });
                 }}>
-                <label className="text-sm font-semibold text-slate-700">
+                <label className="col-span-2 text-sm font-semibold text-slate-700 sm:col-span-1">
                     Producto
                     <select value={product} onChange={(event) => setProduct(event.target.value as ProductKey)}
                         className="mt-1 block h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base">
@@ -90,7 +90,7 @@ export default function VisitProducts({ visitId, editable, initial }: Props) {
                         className="mt-1 block h-12 w-full rounded-xl border border-slate-300 px-3 text-base" />
                 </label>
                 <button type="submit" disabled={busy || !quantity}
-                    className="h-12 self-end rounded-xl bg-sky-700 px-5 text-sm font-bold text-white disabled:opacity-50">
+                    className="panel-btn panel-btn-primary self-end">
                     {busy ? 'Guardando…' : 'Agregar'}
                 </button>
             </form>}

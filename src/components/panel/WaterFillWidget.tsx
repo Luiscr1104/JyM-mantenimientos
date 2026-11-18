@@ -91,7 +91,7 @@ export default function WaterFillWidget({
     }
 
     return (
-        <section className="rounded-2xl border border-amber-300 bg-amber-50 p-5 shadow-sm">
+        <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm sm:p-5">
             <h2 className="text-lg font-extrabold text-slate-900">Llaves de llenado pendientes</h2>
             <p className="mt-1 text-xs text-amber-900">
                 Solo se muestran dentro del panel. No hay alarmas ni avisos con la aplicación cerrada:
@@ -117,11 +117,11 @@ export default function WaterFillWidget({
                         </div>
                         <div className="mt-4 flex flex-wrap gap-2">
                             <button type="button" disabled={busy} onClick={() => void close(task.id)}
-                                className="min-h-12 rounded-xl bg-emerald-700 px-5 text-sm font-bold text-white disabled:opacity-50">
+                                className="panel-btn bg-emerald-700 text-white hover:bg-emerald-800">
                                 Confirmar llave cerrada
                             </button>
                             <a href={task.visitId ? `/panel/visitas/${task.visitId}` : `/panel/propiedades/${task.propertyId}`}
-                                className="inline-flex min-h-12 items-center rounded-xl border border-amber-300 px-4 text-sm font-semibold text-amber-900">
+                                className="panel-btn border border-amber-300 text-amber-900">
                                 {task.visitId ? 'Ver visita' : 'Ver propiedad'}
                             </a>
                         </div>
@@ -139,7 +139,7 @@ export default function WaterFillWidget({
                             value={minutes} onChange={(event) => setMinutes(event.target.value)}
                             className="h-12 w-28 rounded-xl border border-amber-300 bg-white px-3 text-base" />
                         <button type="submit" disabled={busy || !minutes}
-                            className="min-h-12 rounded-xl bg-amber-700 px-5 text-sm font-bold text-white disabled:opacity-50">
+                            className="panel-btn bg-amber-700 text-white hover:bg-amber-800">
                             {busy ? 'Guardando…' : 'Dejar llave abierta'}
                         </button>
                     </div>

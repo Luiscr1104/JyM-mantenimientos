@@ -40,6 +40,12 @@ function FitBounds({ points }: { points: Array<[number, number]> }) {
     const map = useMap();
 
     React.useEffect(() => {
+        const observer = new ResizeObserver(() => map.invalidateSize());
+        observer.observe(map.getContainer());
+        return () => observer.disconnect();
+    }, [map]);
+
+    React.useEffect(() => {
         if (points.length === 0) return;
         if (points.length === 1) {
             map.setView(points[0], 14);

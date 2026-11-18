@@ -20,13 +20,13 @@ const phoneDigits = client.phone?.replace(/\D/g, '');
     <PageHeader title={client.name} description="Ficha del cliente y sus propiedades.">
         <a
             href={`/panel/clientes/${client.id}/editar`}
-            class="inline-flex h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            class="panel-btn panel-btn-secondary"
         >
             Editar
         </a>
         <a
             href={`/panel/propiedades/nuevo?clientId=${client.id}`}
-            class="inline-flex h-10 items-center justify-center rounded-xl bg-sky-700 px-4 text-sm font-bold text-white transition hover:bg-sky-800"
+            class="panel-btn panel-btn-primary"
         >
             + Propiedad
         </a>
@@ -38,7 +38,7 @@ const phoneDigits = client.phone?.replace(/\D/g, '');
     )}
 
     <div class="grid gap-4 lg:grid-cols-3">
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section class="order-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:order-1 lg:p-5">
             <div class="mb-3 flex items-center gap-2">
                 <h2 class="text-base font-extrabold text-slate-900">Contacto</h2>
                 <span
@@ -107,7 +107,7 @@ const phoneDigits = client.phone?.replace(/\D/g, '');
             }
         </section>
 
-        <section class="lg:col-span-2">
+        <section class="order-1 lg:order-2 lg:col-span-2">
             <div class="mb-3 flex items-center justify-between">
                 <h2 class="text-base font-extrabold text-slate-900">
                     Propiedades
@@ -125,7 +125,7 @@ const phoneDigits = client.phone?.replace(/\D/g, '');
                     >
                         <a
                             href={`/panel/propiedades/nuevo?clientId=${client.id}`}
-                            class="inline-flex h-10 items-center justify-center rounded-xl bg-sky-700 px-4 text-sm font-bold text-white"
+                            class="panel-btn panel-btn-primary"
                         >
                             + Agregar propiedad
                         </a>

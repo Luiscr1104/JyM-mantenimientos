@@ -20,7 +20,7 @@ const href = (value: string) => `${basePath}?date=${value}`;
     <a
         href={href(previous)}
         aria-label="Día anterior"
-        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-slate-500 transition hover:bg-slate-100"
+        class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-slate-600 transition hover:bg-slate-100"
     >
         ←
     </a>
@@ -29,9 +29,9 @@ const href = (value: string) => `${basePath}?date=${value}`;
         <p class="truncate text-sm font-extrabold text-slate-900">{formatLongDate(date)}</p>
         {
             date === today ? (
-                <p class="text-[11px] font-bold uppercase tracking-wide text-sky-700">Hoy</p>
+                <p class="text-xs font-bold uppercase tracking-wide text-sky-700">Hoy</p>
             ) : (
-                <a href={href(today)} class="text-[11px] font-bold text-sky-700 hover:underline">
+                <a href={href(today)} class="inline-flex min-h-8 items-center text-xs font-bold text-sky-700 hover:underline">
                     Ir a hoy
                 </a>
             )
@@ -41,7 +41,7 @@ const href = (value: string) => `${basePath}?date=${value}`;
     <a
         href={href(next)}
         aria-label="Día siguiente"
-        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-slate-500 transition hover:bg-slate-100"
+        class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-slate-600 transition hover:bg-slate-100"
     >
         →
     </a>

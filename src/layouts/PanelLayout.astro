@@ -132,7 +132,7 @@ const isActive = (href: string, exact: boolean) =>
                         <button
                             type="submit"
                             aria-label="Cerrar sesión"
-                            class="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100"
+                            class="flex h-12 w-12 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100"
                         >
                             <LogOut className="h-5 w-5" />
                         </button>
@@ -158,7 +158,7 @@ const isActive = (href: string, exact: boolean) =>
                                         href={item.href}
                                         aria-current={active ? 'page' : undefined}
                                         class:list={[
-                                            'flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold transition',
+                                         'flex min-h-14 flex-col items-center justify-center gap-1 py-1 text-[11px] font-semibold transition',
                                             active ? 'text-sky-700' : 'text-slate-500',
                                         ]}
                                     >
