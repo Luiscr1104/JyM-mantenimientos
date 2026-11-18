@@ -13,6 +13,7 @@ import {
     uniqueIndex,
     uuid,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 export const userRole = pgEnum('user_role', ['owner', 'tech']);
 export const clientStatus = pgEnum('client_status', ['active', 'inactive']);
@@ -22,6 +23,11 @@ export const visitStatus = pgEnum('visit_status', [
     'in_progress',
     'completed',
     'skipped',
+]);
+export const poolProduct = pgEnum('pool_product', [
+    'granulated_chlorine',
+    'chlorine_tablet',
+    'caustic_base',
 ]);
 
 const timestamps = {
@@ -130,6 +136,38 @@ export const visits = pgTable(
     ],
 );
 
+export const visitProducts = pgTable(
+    'visit_products',
+    {
+        id: uuid('id').primaryKey().defaultRandom(),
+        visitId: uuid('visit_id').notNull().references(() => visits.id, { onDelete: 'cascade' }),
+        product: poolProduct('product').notNull(),
+        quantity: numeric('quantity', { precision: 10, scale: 2 }).notNull(),
+        createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (table) => [index('visit_products_visit_id_idx').on(table.visitId)],
+);
+
+export const waterFillTasks = pgTable(
+    'water_fill_tasks',
+    {
+        id: uuid('id').primaryKey().defaultRandom(),
+        propertyId: uuid('property_id').notNull().references(() => properties.id, { onDelete: 'cascade' }),
+        visitId: uuid('visit_id').references(() => visits.id, { onDelete: 'set null' }),
+        dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+        delayMinutes: integer('delay_minutes').notNull(),
+        openedBy: uuid('opened_by').references(() => profiles.id, { onDelete: 'set null' }),
+        closedAt: timestamp('closed_at', { withTimezone: true }),
+        closedBy: uuid('closed_by').references(() => profiles.id, { onDelete: 'set null' }),
+        createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (table) => [
+        index('water_fill_tasks_property_id_idx').on(table.propertyId),
+        index('water_fill_tasks_due_at_idx').on(table.dueAt),
+        uniqueIndex('water_fill_tasks_one_open_per_property').on(table.propertyId).where(sql`closed_at IS NULL`),
+    ],
+);
+
 export interface RouteStop {
     visitId: string;
     propertyId: string;
@@ -167,3 +205,5 @@ export type NewLead = typeof leads.$inferInsert;
 export type Visit = typeof visits.$inferSelect;
 export type NewVisit = typeof visits.$inferInsert;
 export type RoutePlan = typeof routePlans.$inferSelect;
+export type VisitProduct = typeof visitProducts.$inferSelect;
+export type WaterFillTask = typeof waterFillTasks.$inferSelect;

@@ -1,4 +1,6 @@
 import * as React from 'react';
+import VisitProducts, { type ProductEntry } from './VisitProducts';
+import WaterFillWidget, { type OpenWaterTask } from './WaterFillWidget';
 import {
     EXIT_STEPS,
     TASKS,
@@ -14,6 +16,10 @@ type SaveState = 'saved' | 'pending' | 'saving' | 'error';
 interface Props {
     id: string;
     date: string;
+    propertyId: string;
+    propertyName: string;
+    initialProducts: ProductEntry[];
+    initialWaterTasks: OpenWaterTask[];
     initial: {
         status: Status;
         checklist: Record<string, boolean> | null;
@@ -45,7 +51,9 @@ function elapsed(start: string, end: string | null, now: number) {
     ).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-export default function VisitWorkspace({ id, date, initial }: Props) {
+export default function VisitWorkspace({
+    id, date, propertyId, propertyName, initial, initialProducts, initialWaterTasks,
+}: Props) {
     const [status, setStatus] = React.useState<Status>(initial.status);
     const [draft, setDraft] = React.useState<Draft>({
         checklist: normalizeChecklist(initial.checklist),
@@ -241,6 +249,12 @@ export default function VisitWorkspace({ id, date, initial }: Props) {
                     ))}
                 </div>
             </section>
+
+            <VisitProducts visitId={id} editable={editable || status === 'completed'} initial={initialProducts} />
+
+            <WaterFillWidget initial={initialWaterTasks}
+                visitId={id} propertyId={propertyId} propertyName={propertyName}
+                canCreate={editable} />
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h2 className="text-lg font-extrabold text-slate-900">Temporizador de bomba</h2>

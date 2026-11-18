@@ -7,6 +7,9 @@ import { formatLongDate } from '@/lib/dates';
 import { visitStatusLabel, visitStatusStyle } from '@/lib/format';
 import { googleMapsStopUrl } from '@/lib/geo';
 import { getVisitWithProperty } from '@/server/visits';
+import { listVisitProducts } from '@/server/visit-products';
+import { getOpenWaterTaskForProperty } from '@/server/water-fill';
+import type { ProductKey } from '@/lib/products';
 
 const id = z.uuid().safeParse(Astro.params.id);
 if (!id.success) return Astro.redirect('/panel/agenda');
@@ -14,6 +17,10 @@ const data = await getVisitWithProperty(id.data);
 if (!data) return Astro.redirect('/panel/agenda');
 
 const { visit, property, client } = data;
+const [products, waterTask] = await Promise.all([
+    listVisitProducts(visit.id),
+    getOpenWaterTaskForProperty(property.id),
+]);
 const location = property.lat != null && property.lng != null
     ? googleMapsStopUrl({ lat: property.lat, lng: property.lng })
     : null;
@@ -58,6 +65,20 @@ const location = property.lat != null && property.lng != null
         <VisitWorkspace client:load
             id={visit.id}
             date={visit.scheduledFor}
+            propertyId={property.id}
+            propertyName={property.alias}
+            initialProducts={products.map(({ id, product, quantity }) => ({
+                id, product: product as ProductKey, quantity,
+            }))}
+            initialWaterTasks={waterTask ? [{
+                id: waterTask.id,
+                propertyId: property.id,
+                propertyName: property.alias,
+                visitId: waterTask.visitId,
+                createdAt: waterTask.createdAt.toISOString(),
+                dueAt: waterTask.dueAt.toISOString(),
+                delayMinutes: waterTask.delayMinutes,
+            }] : []}
             initial={{
                 status: visit.status,
                 checklist: visit.checklist,

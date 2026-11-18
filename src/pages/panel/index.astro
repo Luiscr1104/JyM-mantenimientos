@@ -17,8 +17,11 @@ import { countProperties } from '@/server/properties';
 import { getRoutePlan } from '@/server/routes';
 import { getSettings } from '@/server/settings';
 import { listVisitsByDate, suggestVisits } from '@/server/visits';
+import WaterFillWidget from '@/components/panel/WaterFillWidget';
+import { listOpenWaterTasks } from '@/server/water-fill';
 
 const today = getToday();
+const openWaterTasks = await listOpenWaterTasks();
 
 const dayVisits = await listVisitsByDate(today);
 const routePlan = await getRoutePlan(today);
@@ -55,6 +58,17 @@ const stats = [
     </PageHeader>
 
     <div class="space-y-5">
+        {openWaterTasks.length > 0 && (
+            <WaterFillWidget client:load initial={openWaterTasks.map(({ task, property }) => ({
+                id: task.id,
+                propertyId: property.id,
+                propertyName: property.alias,
+                visitId: task.visitId,
+                createdAt: task.createdAt.toISOString(),
+                dueAt: task.dueAt.toISOString(),
+                delayMinutes: task.delayMinutes,
+            }))} />
+        )}
         {
             ok === 'route' && (
                 <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">

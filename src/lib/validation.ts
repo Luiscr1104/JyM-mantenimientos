@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { isValidDate } from './dates';
 import { EXIT_STEPS, TASKS } from './visit-work';
+import { PRODUCTS } from './products';
 
 const emptyToUndefined = (value: unknown) =>
     value === '' || value === null || value === undefined ? undefined : value;
@@ -85,6 +86,18 @@ export const visitWorkInputSchema = z.object({
     pendingReason: z.string().trim().max(1000, 'Máximo 1000 caracteres'),
 });
 export const pumpActionSchema = z.enum(['start', 'stop']);
+export const visitProductSchema = z.object({
+    product: z.enum(PRODUCTS.map(({ key }) => key)),
+    quantity: z.number().finite().min(0.01).max(100_000)
+        .refine((value) => Math.abs(Math.round(value * 100) - value * 100) < 1e-8, 'Máximo dos decimales'),
+});
+export const waterFillInputSchema = z.object({
+    visitId: z.uuid().optional(),
+    propertyId: z.uuid().optional(),
+    minutes: z.number().int().min(1).max(720),
+}).refine((value) => Boolean(value.visitId) !== Boolean(value.propertyId), {
+    message: 'Selecciona una visita o una propiedad',
+});
 
 export const PREFERRED_DAYS = [
     'lunes',
