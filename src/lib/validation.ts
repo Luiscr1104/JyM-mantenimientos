@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { isValidDate } from './dates';
-import { EXIT_STEPS, TASKS } from './visit-work';
+import { EXIT_STEPS, EXTRA_TASKS, TASKS } from './visit-work';
 import { PRODUCTS } from './products';
+import { WORK_TYPES } from './visit-types';
 
 const emptyToUndefined = (value: unknown) =>
     value === '' || value === null || value === undefined ? undefined : value;
@@ -68,6 +69,8 @@ export const dateStringSchema = z
 export const visitInputSchema = z.object({
     propertyId: z.string().uuid('Propiedad inválida'),
     scheduledFor: dateStringSchema,
+    workType: z.enum(WORK_TYPES.filter(({ key }) => key !== 'flocculation_follow_up').map(({ key }) => key))
+        .optional().default('routine'),
     orderIndex: z.coerce.number().int().min(0).optional(),
 });
 
@@ -75,8 +78,10 @@ export const visitStatusSchema = z.enum(['scheduled', 'in_progress', 'completed'
 
 export const visitActionSchema = z.enum(['start', 'complete', 'skip', 'reopen', 'delete']);
 
-const checklistKeys = [...TASKS, ...EXIT_STEPS].map(({ key }) => key);
+const checklistKeys = [...TASKS, ...EXTRA_TASKS, ...EXIT_STEPS].map(({ key }) => key);
 export const visitWorkInputSchema = z.object({
+    workTypes: z.array(z.enum(WORK_TYPES.map(({ key }) => key))).min(1).max(WORK_TYPES.length)
+        .refine((types) => new Set(types).size === types.length, 'No repitas tipos de trabajo'),
     checklist: z.record(z.string(), z.boolean()).refine(
         (value) => Object.keys(value).length === checklistKeys.length &&
             checklistKeys.every((key) => typeof value[key] === 'boolean'),

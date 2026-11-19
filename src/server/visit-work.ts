@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { db, routePlans, visits } from '@/db';
+import { db, routePlans, visitEvents, visits } from '@/db';
 import { getCompletionIssue, normalizeChecklist } from '@/lib/visit-work';
 import type { z } from 'zod';
 import type { visitWorkInputSchema } from '@/lib/validation';
@@ -19,6 +19,7 @@ export async function saveVisitWork(id: string, input: z.infer<typeof visitWorkI
         }
 
         const [row] = await tx.update(visits).set({
+            workTypes: input.workTypes,
             checklist: normalizeChecklist(input.checklist),
             notes: input.notes || null,
             pendingReason: input.pendingReason || null,
@@ -50,7 +51,7 @@ export async function changePump(id: string, action: 'start' | 'stop') {
     });
 }
 
-export async function completeVisit(id: string) {
+export async function completeVisit(id: string, actorId?: string) {
     const { row, changed } = await db.transaction(async (tx) => {
         const [current] = await tx.select().from(visits).where(eq(visits.id, id)).for('update');
         if (!current) throw new VisitWorkError('Visita no encontrada', 404);
@@ -63,14 +64,23 @@ export async function completeVisit(id: string) {
             normalizeChecklist(current.checklist),
             current.pendingReason,
             Boolean(current.pumpStartedAt && !current.pumpStoppedAt),
+            current.workTypes,
         );
         if (issue) throw new VisitWorkError(issue);
 
+        const now = new Date();
         const [completed] = await tx.update(visits).set({
             status: 'completed',
-            completedAt: new Date(),
-            updatedAt: new Date(),
+            completedAt: now,
+            leftAt: now,
+            updatedAt: now,
         }).where(eq(visits.id, id)).returning();
+        await tx.insert(visitEvents).values({
+            visitId: id,
+            kind: 'departure',
+            occurredAt: now,
+            actorId,
+        });
         return { row: completed, changed: true };
     });
     if (changed) {

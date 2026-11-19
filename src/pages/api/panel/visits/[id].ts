@@ -26,7 +26,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     if (!action.success) return json({ error: 'Acción inválida' }, 400);
 
     try {
-        const visit = await applyVisitAction(id.data, action.data);
+        const visit = await applyVisitAction(id.data, action.data, locals.user.id);
         if (action.data !== 'delete' && !visit) return json({ error: 'Visita no encontrada' }, 404);
 
         return isJsonRequest(request)
@@ -58,7 +58,7 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
     if (!status.success) return json({ error: 'Estado inválido' }, 400);
 
     try {
-        const visit = await applyVisitAction(id.data, STATUS_TO_ACTION[status.data]);
+        const visit = await applyVisitAction(id.data, STATUS_TO_ACTION[status.data], locals.user.id);
         if (!visit) return json({ error: 'Visita no encontrada' }, 404);
         return json({ ok: true, visit });
     } catch (error) {

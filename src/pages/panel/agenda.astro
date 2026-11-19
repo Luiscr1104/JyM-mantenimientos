@@ -3,7 +3,8 @@ import PanelLayout from '@/layouts/PanelLayout.astro';
 import PageHeader from '@/components/panel/PageHeader.astro';
 import DateNav from '@/components/panel/DateNav.astro';
 import { getToday, isValidDate } from '@/lib/dates';
-import { visitStatusLabel, visitStatusStyle } from '@/lib/format';
+import { WORK_TYPES, workTypesLabel } from '@/lib/visit-types';
+import { formatTime, formatVisitDuration, visitStatusLabel, visitStatusStyle } from '@/lib/format';
 import { listPropertiesWithClient } from '@/server/properties';
 import { listVisitsByDate, suggestVisits } from '@/server/visits';
 
@@ -85,6 +86,18 @@ const ok = Astro.url.searchParams.get('ok');
                                         <p class="mt-0.5 truncate text-sm text-slate-500">
                                             {row.client.name} · {row.property.address}
                                         </p>
+                                        <p class="mt-1 text-xs font-semibold text-sky-800">
+                                            {workTypesLabel(row.visit.workTypes)}
+                                        </p>
+                                        {(row.visit.startedAt || row.visit.leftAt || row.visit.completedAt) && (
+                                            <p class="mt-1 text-xs font-semibold text-slate-600">
+                                                {row.visit.startedAt && `Llegada ${formatTime(row.visit.startedAt)}`}
+                                                {(row.visit.leftAt ?? row.visit.completedAt) &&
+                                                    ` · Salida ${formatTime(row.visit.leftAt ?? row.visit.completedAt!)}`}
+                                                {formatVisitDuration(row.visit.startedAt, row.visit.leftAt ?? row.visit.completedAt) &&
+                                                    ` · ${formatVisitDuration(row.visit.startedAt, row.visit.leftAt ?? row.visit.completedAt)} en propiedad`}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                 <div class:list={[
@@ -131,13 +144,15 @@ const ok = Astro.url.searchParams.get('ok');
                                                 </button>
                                             </form>
                                         )}
-                                        <form method="POST" action={`/api/panel/visits/${row.visit.id}`}
-                                            onsubmit="return confirm('¿Eliminar esta visita de la agenda?')">
-                                            <input type="hidden" name="action" value="delete" />
-                                            <button type="submit" class="panel-btn panel-btn-danger">
-                                                Eliminar
-                                            </button>
-                                        </form>
+                                        {row.visit.status === 'scheduled' && !row.visit.checklist && (
+                                            <form method="POST" action={`/api/panel/visits/${row.visit.id}`}
+                                                onsubmit="return confirm('¿Eliminar esta visita de la agenda?')">
+                                                <input type="hidden" name="action" value="delete" />
+                                                <button type="submit" class="panel-btn panel-btn-danger">
+                                                    Eliminar
+                                                </button>
+                                            </form>
+                                        )}
                                     </div>
                                 </details>
                             </li>
@@ -176,6 +191,15 @@ const ok = Astro.url.searchParams.get('ok');
                                     <option value={property.id}>
                                         {property.alias} · {client.name}
                                     </option>
+                                ))}
+                            </select>
+                            <label for="workType" class="block text-sm font-semibold text-slate-700">
+                                Trabajo previsto
+                            </label>
+                            <select id="workType" name="workType"
+                                class="h-12 min-w-0 w-full rounded-xl border border-slate-300 bg-white px-3 text-base text-slate-900">
+                                {WORK_TYPES.filter(({ key }) => key !== 'flocculation_follow_up').map(({ key, label }) => (
+                                    <option value={key}>{label}</option>
                                 ))}
                             </select>
                             <button

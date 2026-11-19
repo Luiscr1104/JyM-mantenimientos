@@ -20,6 +20,20 @@ export function formatDateTime(value: Date | string): string {
     }).format(new Date(value));
 }
 
+export function formatTime(value: Date | string): string {
+    return new Intl.DateTimeFormat('es-CR', {
+        timeZone: TIMEZONE,
+        hour: '2-digit',
+        minute: '2-digit',
+    }).format(new Date(value));
+}
+
+export function formatVisitDuration(start: Date | string | null, end: Date | string | null): string | null {
+    if (!start || !end) return null;
+    const seconds = Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000));
+    return formatDuration(seconds);
+}
+
 export function formatRelative(value: Date | string): string {
     const date = new Date(value);
     const diffMs = Date.now() - date.getTime();

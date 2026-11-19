@@ -1,3 +1,5 @@
+import type { WorkType } from './visit-types';
+
 export const TASKS = [
     { key: 'inspect', label: 'Revisar piscina y equipos' },
     { key: 'debris', label: 'Retirar residuos y limpiar canastas' },
@@ -6,17 +8,40 @@ export const TASKS = [
     { key: 'filter', label: 'Verificar filtro y bomba según las instrucciones' },
 ] as const;
 
+export const EXTRA_TASKS = [
+    { key: 'backwash', label: 'Realizar lavado de filtro', type: 'filter_backwash' },
+    { key: 'checkBackwash', label: 'Verificar el filtro tras el lavado', type: 'filter_backwash' },
+    { key: 'replaceSand', label: 'Cambiar la arena del filtro', type: 'sand_replacement' },
+    { key: 'checkSand', label: 'Verificar el filtro tras el cambio', type: 'sand_replacement' },
+    { key: 'washSidewalk', label: 'Hidrolavar las aceras', type: 'pressure_wash' },
+    { key: 'washPool', label: 'Lavar la piscina', type: 'pool_wash' },
+    { key: 'checkPool', label: 'Revisar la piscina tras el lavado', type: 'pool_wash' },
+    { key: 'applyFlocculant', label: 'Realizar floculación', type: 'flocculation' },
+    { key: 'planFlocculationReturn', label: 'Revisar el seguimiento necesario', type: 'flocculation' },
+    { key: 'flocculationReturn', label: 'Realizar el trabajo de seguimiento', type: 'flocculation_follow_up' },
+] as const;
+
 export const EXIT_STEPS = [
     { key: 'exitEquipment', label: 'Equipos en el estado indicado para esta propiedad' },
     { key: 'exitTools', label: 'Herramientas y productos recogidos' },
     { key: 'exitAccess', label: 'Accesos asegurados según las instrucciones' },
 ] as const;
 
-export type VisitChecklistKey = (typeof TASKS)[number]['key'] | (typeof EXIT_STEPS)[number]['key'];
+export type VisitChecklistKey =
+    | (typeof TASKS)[number]['key']
+    | (typeof EXTRA_TASKS)[number]['key']
+    | (typeof EXIT_STEPS)[number]['key'];
 export type WorkChecklist = Record<VisitChecklistKey, boolean>;
 
+export function tasksForTypes(types: readonly WorkType[]) {
+    return [
+        ...(types.includes('routine') ? TASKS : []),
+        ...EXTRA_TASKS.filter((task) => types.includes(task.type)),
+    ];
+}
+
 export function emptyChecklist(): WorkChecklist {
-    return Object.fromEntries([...TASKS, ...EXIT_STEPS].map(({ key }) => [key, false])) as WorkChecklist;
+    return Object.fromEntries([...TASKS, ...EXTRA_TASKS, ...EXIT_STEPS].map(({ key }) => [key, false])) as WorkChecklist;
 }
 
 export function normalizeChecklist(value: Record<string, boolean> | null): WorkChecklist {
@@ -31,12 +56,13 @@ export function getCompletionIssue(
     checklist: WorkChecklist,
     pendingReason: string | null,
     pumpRunning: boolean,
+    workTypes: readonly WorkType[] = ['routine'],
 ): string | null {
     if (pumpRunning) return 'Detén y verifica la bomba antes de cerrar la visita.';
     if (EXIT_STEPS.some(({ key }) => !checklist[key])) {
         return 'Confirma los tres pasos de salida antes de completar.';
     }
-    if (TASKS.some(({ key }) => !checklist[key]) && (pendingReason?.trim().length ?? 0) < 10) {
+    if (tasksForTypes(workTypes).some(({ key }) => !checklist[key]) && (pendingReason?.trim().length ?? 0) < 10) {
         return 'Explica qué tareas quedaron pendientes (mínimo 10 caracteres).';
     }
     return null;

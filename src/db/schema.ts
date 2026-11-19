@@ -10,10 +10,12 @@ import {
     pgTable,
     text,
     timestamp,
+    type AnyPgColumn,
     uniqueIndex,
     uuid,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type { WorkType } from '@/lib/visit-types';
 
 export const userRole = pgEnum('user_role', ['owner', 'tech']);
 export const clientStatus = pgEnum('client_status', ['active', 'inactive']);
@@ -28,6 +30,8 @@ export const poolProduct = pgEnum('pool_product', [
     'granulated_chlorine',
     'chlorine_tablet',
     'caustic_base',
+    'liquid_flocculant',
+    'granular_flocculant',
 ]);
 
 const timestamps = {
@@ -122,6 +126,10 @@ export const visits = pgTable(
         orderIndex: integer('order_index').notNull().default(0),
         startedAt: timestamp('started_at', { withTimezone: true }),
         completedAt: timestamp('completed_at', { withTimezone: true }),
+        leftAt: timestamp('left_at', { withTimezone: true }),
+        workTypes: text('work_types').array().$type<WorkType[]>().notNull().default(sql`ARRAY['routine']::text[]`),
+        followUpForVisitId: uuid('follow_up_for_visit_id')
+            .references((): AnyPgColumn => visits.id, { onDelete: 'set null' }),
         pumpStartedAt: timestamp('pump_started_at', { withTimezone: true }),
         pumpStoppedAt: timestamp('pump_stopped_at', { withTimezone: true }),
         checklist: jsonb('checklist').$type<VisitChecklist>(),
@@ -133,9 +141,21 @@ export const visits = pgTable(
         index('visits_scheduled_for_idx').on(table.scheduledFor),
         index('visits_property_id_idx').on(table.propertyId),
         uniqueIndex('visits_property_date_unique').on(table.propertyId, table.scheduledFor),
+        uniqueIndex('visits_follow_up_unique').on(table.followUpForVisitId),
     ],
 );
 
+export const visitEvents = pgTable(
+    'visit_events',
+    {
+        id: uuid('id').primaryKey().defaultRandom(),
+        visitId: uuid('visit_id').notNull().references(() => visits.id, { onDelete: 'cascade' }),
+        kind: text('kind').$type<'arrival' | 'departure' | 'reopen' | 'skip'>().notNull(),
+        occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+        actorId: uuid('actor_id').references(() => profiles.id, { onDelete: 'set null' }),
+    },
+    (table) => [index('visit_events_visit_id_idx').on(table.visitId)],
+);
 export const visitProducts = pgTable(
     'visit_products',
     {

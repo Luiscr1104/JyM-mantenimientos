@@ -2,9 +2,11 @@ import { and, asc, eq, ne, sql } from 'drizzle-orm';
 import {
     clients,
     db,
+    profiles,
     properties,
     routePlans,
     servicePlans,
+    visitEvents,
     visits,
     type Client,
     type Property,
@@ -84,7 +86,7 @@ export async function createVisit(input: VisitInput) {
         )
         .limit(1);
 
-    if (existing) return existing.id;
+    if (existing) return { id: existing.id, created: false };
 
     const orderIndex = input.orderIndex ?? (await nextOrderIndex(input.scheduledFor));
 
@@ -94,13 +96,14 @@ export async function createVisit(input: VisitInput) {
             propertyId: input.propertyId,
             scheduledFor: input.scheduledFor,
             orderIndex,
+            workTypes: [input.workType],
         })
         .onConflictDoNothing({ target: [visits.propertyId, visits.scheduledFor] })
         .returning({ id: visits.id });
 
     if (row) {
         await invalidateRoute(input.scheduledFor);
-        return row.id;
+        return { id: row.id, created: true };
     }
     const [duplicate] = await db
         .select({ id: visits.id })
@@ -108,7 +111,7 @@ export async function createVisit(input: VisitInput) {
         .where(and(eq(visits.propertyId, input.propertyId), eq(visits.scheduledFor, input.scheduledFor)))
         .limit(1);
     if (!duplicate) throw new Error('No se pudo confirmar la visita.');
-    return duplicate.id;
+    return { id: duplicate.id, created: false };
 }
 
 export async function deleteVisit(id: string) {
@@ -117,6 +120,14 @@ export async function deleteVisit(id: string) {
         if (!current) return null;
         if (current.pumpStartedAt && !current.pumpStoppedAt) {
             throw new VisitWorkError('Detén y verifica la bomba antes de eliminar la visita.');
+        }
+        const [event] = await tx.select({ id: visitEvents.id }).from(visitEvents)
+            .where(eq(visitEvents.visitId, id)).limit(1);
+        if (event || current.status !== 'scheduled' || current.startedAt ||
+            current.leftAt || current.completedAt || current.checklist ||
+            current.pumpStartedAt || current.pumpStoppedAt ||
+            current.notes?.trim() || current.pendingReason?.trim()) {
+            throw new VisitWorkError('Esta visita tiene historial. Reábrela o consúltala, pero no se puede borrar el registro.');
         }
         const [deleted] = await tx.delete(visits).where(eq(visits.id, id)).returning({
             date: visits.scheduledFor,
@@ -128,61 +139,115 @@ export async function deleteVisit(id: string) {
     return Boolean(row);
 }
 
-export async function applyVisitAction(id: string, action: VisitAction) {
+export async function applyVisitAction(id: string, action: VisitAction, actorId?: string) {
     if (action === 'delete') {
         await deleteVisit(id);
         return null;
     }
-    if (action === 'complete') return completeVisit(id);
+    if (action === 'complete') return completeVisit(id, actorId);
 
-    const [current] = await db.select().from(visits).where(eq(visits.id, id)).limit(1);
-    if (!current) return null;
-    const allowed: Record<Exclude<VisitAction, 'delete' | 'complete'>, Visit['status'][]> = {
-        start: ['scheduled'],
-        skip: ['scheduled', 'in_progress'],
-        reopen: ['completed', 'skipped'],
-    };
-    if (!allowed[action].includes(current.status)) return current;
+    const { row, changed, date } = await db.transaction(async (tx) => {
+        const [current] = await tx.select().from(visits).where(eq(visits.id, id)).for('update');
+        if (!current) return { row: null, changed: false, date: null };
+        const allowed: Record<Exclude<VisitAction, 'delete' | 'complete'>, Visit['status'][]> = {
+            start: ['scheduled'],
+            skip: ['scheduled', 'in_progress'],
+            reopen: ['completed', 'skipped'],
+        };
+        if (!allowed[action].includes(current.status)) {
+            return { row: current, changed: false, date: current.scheduledFor };
+        }
+        if (action === 'skip' && current.pumpStartedAt && !current.pumpStoppedAt) {
+            throw new VisitWorkError('Detén y verifica la bomba antes de omitir la visita.');
+        }
+        const now = new Date();
+        const patch: Partial<typeof visits.$inferInsert> = { updatedAt: now };
+        switch (action) {
+            case 'start':
+                patch.status = 'in_progress';
+                patch.startedAt = current.startedAt ?? now;
+                break;
+            case 'skip':
+                patch.status = 'skipped';
+                if (current.startedAt) patch.leftAt = now;
+                break;
+            case 'reopen':
+                patch.status = 'scheduled';
+                patch.startedAt = null;
+                patch.completedAt = null;
+                patch.leftAt = null;
+                patch.checklist = normalizeChecklist(current.checklist);
+                for (const { key } of EXIT_STEPS) patch.checklist[key] = false;
+                break;
+        }
+        const [updated] = await tx.update(visits).set(patch).where(eq(visits.id, id)).returning();
+        await tx.insert(visitEvents).values({
+            visitId: id,
+            kind: action === 'start' ? 'arrival' : action,
+            occurredAt: now,
+            actorId,
+        });
+        return { row: updated, changed: true, date: current.scheduledFor };
+    });
+    if (changed && action !== 'start' && date) await invalidateRoute(date);
+    return row;
+}
 
-    const now = new Date();
-    const patch: Partial<typeof visits.$inferInsert> = { updatedAt: now };
+export async function listVisitEvents(id: string) {
+    return db.select({ event: visitEvents, actor: profiles.fullName })
+        .from(visitEvents)
+        .leftJoin(profiles, eq(visitEvents.actorId, profiles.id))
+        .where(eq(visitEvents.visitId, id))
+        .orderBy(asc(visitEvents.occurredAt));
+}
 
-    switch (action) {
-        case 'start':
-            patch.status = 'in_progress';
-            patch.startedAt = current.startedAt ?? now;
-            break;
-        case 'skip':
-            if (current.pumpStartedAt && !current.pumpStoppedAt) {
-                throw new VisitWorkError('Detén y verifica la bomba antes de omitir la visita.');
+export async function getVisitFollowUp(id: string) {
+    const [row] = await db.select().from(visits)
+        .where(eq(visits.followUpForVisitId, id)).limit(1);
+    return row ?? null;
+}
+
+export async function scheduleFlocculationFollowUp(id: string, date: string) {
+    const { visit, created } = await db.transaction(async (tx) => {
+        const [source] = await tx.select().from(visits).where(eq(visits.id, id)).for('update');
+        if (!source) throw new VisitWorkError('Visita no encontrada', 404);
+        if (source.status !== 'completed' || !source.workTypes.includes('flocculation')) {
+            throw new VisitWorkError('Completa la floculación antes de programar su seguimiento.');
+        }
+        if (date <= source.scheduledFor) {
+            throw new VisitWorkError('El seguimiento debe ser en un día posterior a la floculación.', 400);
+        }
+        const [linked] = await tx.select().from(visits).where(eq(visits.followUpForVisitId, id)).limit(1);
+        if (linked) return { visit: linked, created: false };
+
+        const [existing] = await tx.select().from(visits)
+            .where(and(eq(visits.propertyId, source.propertyId), eq(visits.scheduledFor, date))).limit(1);
+        if (existing) {
+            if (existing.followUpForVisitId && existing.followUpForVisitId !== id) {
+                throw new VisitWorkError('Esa visita ya es seguimiento de otra floculación.');
             }
-            patch.status = 'skipped';
-            break;
-        case 'reopen':
-            patch.status = 'scheduled';
-            patch.startedAt = null;
-            patch.completedAt = null;
-            patch.checklist = normalizeChecklist(current.checklist);
-            for (const { key } of EXIT_STEPS) patch.checklist[key] = false;
-            break;
-    }
-
-    const [row] = await db.update(visits).set(patch)
-        .where(and(
-            eq(visits.id, id),
-            eq(visits.status, current.status),
-            action === 'skip'
-                ? sql`(${visits.pumpStartedAt} is null or ${visits.pumpStoppedAt} is not null)`
-                : undefined,
-        )).returning();
-    if (row && action !== 'start') await invalidateRoute(current.scheduledFor);
-
-    if (row) return row;
-    const [latest] = await db.select().from(visits).where(eq(visits.id, id)).limit(1);
-    if (action === 'skip' && latest?.pumpStartedAt && !latest.pumpStoppedAt) {
-        throw new VisitWorkError('Detén y verifica la bomba antes de omitir la visita.');
-    }
-    return latest ?? null;
+            const [updated] = await tx.update(visits).set({
+                followUpForVisitId: id,
+                workTypes: existing.status === 'completed' || existing.workTypes.includes('flocculation_follow_up')
+                    ? existing.workTypes
+                    : [...existing.workTypes, 'flocculation_follow_up'],
+                updatedAt: new Date(),
+            }).where(eq(visits.id, existing.id)).returning();
+            return { visit: updated, created: false };
+        }
+        const [newVisit] = await tx.insert(visits).values({
+            propertyId: source.propertyId,
+            scheduledFor: date,
+            orderIndex: Number((await tx.select({
+                max: sql<number | null>`max(${visits.orderIndex})`,
+            }).from(visits).where(eq(visits.scheduledFor, date)))[0]?.max ?? -1) + 1,
+            workTypes: ['flocculation_follow_up'],
+            followUpForVisitId: id,
+        }).returning();
+        return { visit: newVisit, created: true };
+    });
+    if (created) await invalidateRoute(date);
+    return visit;
 }
 
 export async function suggestVisits(date: string): Promise<SuggestedVisit[]> {

@@ -29,6 +29,20 @@
       "when": 1794963014624,
       "tag": "0003_yummy_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795111438950,
+      "tag": "0004_common_spiral",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795111669901,
+      "tag": "0005_many_the_enforcers",
+      "breakpoints": true
     }
   ]
 }

@@ -14,11 +14,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
 
     try {
-        const id = await createVisit(parsed.data);
+        const { id, created } = await createVisit(parsed.data);
 
         return isJsonRequest(request)
-            ? json({ ok: true, id })
-            : redirectBack(request, `/panel/agenda?date=${parsed.data.scheduledFor}`);
+            ? json({ ok: true, id, created })
+            : body.returnTo === 'route'
+                ? new Response(null, {
+                    status: 303,
+                    headers: { Location: `/panel/ruta?date=${parsed.data.scheduledFor}&ok=${created ? 'visit-added' : 'visit-exists'}` },
+                })
+                : redirectBack(request, `/panel/agenda?date=${parsed.data.scheduledFor}`);
     } catch (error) {
         console.error('[visits.create]', error);
         return json({ error: 'No se pudo programar la visita' }, 500);
