@@ -119,6 +119,32 @@
 }
 
 @layer components {
+  @keyframes water-drip {
+    0% { transform: translateY(-4px) rotate(-45deg) scale(.8); opacity: 0; }
+    20% { opacity: .9; }
+    80% { opacity: .9; }
+    100% { transform: translateY(22px) rotate(-45deg) scale(.8); opacity: 0; }
+  }
+  .water-flow-icon::after {
+    content: "";
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 6px;
+    height: 6px;
+    border-radius: 70% 70% 70% 0;
+    background: currentColor;
+    animation: water-drip 2.2s ease-in infinite;
+  }
+  .water-flow-icon--overdue::after {
+    display: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .water-flow-icon::after {
+      animation: none;
+      display: none;
+    }
+  }
   .panel-btn {
     @apply inline-flex min-h-12 items-center justify-center rounded-xl px-4 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 disabled:cursor-not-allowed disabled:opacity-50;
   }

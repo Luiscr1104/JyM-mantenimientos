@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { Droplets } from 'lucide-react';
 
 export interface OpenWaterTask {
     id: string;
@@ -103,25 +104,38 @@ export default function WaterFillWidget({
             {tasks.length > 0 && <ul className="mt-4 space-y-3">
                 {tasks.map((task) => {
                     const overdue = new Date(task.dueAt).getTime() <= now;
-                    return <li key={task.id} className="rounded-xl border border-amber-200 bg-white p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div>
-                                <p className="font-extrabold text-slate-900">Llave abierta · {task.propertyName}</p>
-                                <p className="mt-1 text-sm text-slate-600">
-                                    Registrada {timeFormat.format(new Date(task.createdAt))} · revisión {timeFormat.format(new Date(task.dueAt))}
-                                </p>
+                    return <li key={task.id} className="min-w-0 rounded-xl border border-amber-200 bg-white p-3 sm:p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="flex min-w-0 flex-1 items-start gap-3">
+                                <span
+                                    aria-hidden="true"
+                                    className={`water-flow-icon relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
+                                        overdue
+                                            ? 'water-flow-icon--overdue border-red-200 bg-red-50 text-red-700'
+                                            : 'border-sky-200 bg-sky-50 text-sky-700'
+                                    }`}
+                                >
+                                    <Droplets className="h-6 w-6" />
+                                </span>
+                                <div className="min-w-0">
+                                    <p className="break-words font-extrabold text-slate-900">Llave abierta · {task.propertyName}</p>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        Registrada {timeFormat.format(new Date(task.createdAt))} · revisión {timeFormat.format(new Date(task.dueAt))}
+                                    </p>
+                                </div>
                             </div>
-                            <strong role="timer" suppressHydrationWarning className={overdue ? 'text-red-700' : 'text-amber-800'}>
+                            <strong role="timer" suppressHydrationWarning
+                                className={`rounded-lg px-2 py-1 text-sm ${overdue ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>
                                 {remainingLabel(task.dueAt, now)}
                             </strong>
                         </div>
-                        <div className="mt-4 flex flex-wrap gap-2">
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                             <button type="button" disabled={busy} onClick={() => void close(task.id)}
-                                className="panel-btn bg-emerald-700 text-white hover:bg-emerald-800">
+                                className="panel-btn w-full bg-emerald-700 text-white hover:bg-emerald-800 sm:w-auto">
                                 Confirmar llave cerrada
                             </button>
                             <a href={task.visitId ? `/panel/visitas/${task.visitId}` : `/panel/propiedades/${task.propertyId}`}
-                                className="panel-btn border border-amber-300 text-amber-900">
+                                className="panel-btn w-full border border-amber-300 text-amber-900 sm:w-auto">
                                 {task.visitId ? 'Ver visita' : 'Ver propiedad'}
                             </a>
                         </div>

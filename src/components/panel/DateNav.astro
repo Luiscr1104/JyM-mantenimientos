@@ -10,6 +10,12 @@ const { date, basePath } = Astro.props;
 const previous = addDays(date, -1);
 const next = addDays(date, 1);
 const today = getToday();
+const shortDate = new Intl.DateTimeFormat('es-CR', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+}).format(new Date(`${date}T12:00:00Z`));
 
 const href = (value: string) => `${basePath}?date=${value}`;
 ---
@@ -20,13 +26,16 @@ const href = (value: string) => `${basePath}?date=${value}`;
     <a
         href={href(previous)}
         aria-label="Día anterior"
-        class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-slate-600 transition hover:bg-slate-100"
+        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-slate-600 transition hover:bg-slate-100 sm:h-12 sm:w-12"
     >
         ←
     </a>
 
     <div class="min-w-0 text-center">
-        <p class="truncate text-sm font-extrabold text-slate-900">{formatLongDate(date)}</p>
+        <p class="text-sm font-extrabold text-slate-900">
+            <span class="sm:hidden">{shortDate}</span>
+            <span class="hidden sm:inline">{formatLongDate(date)}</span>
+        </p>
         {
             date === today ? (
                 <p class="text-xs font-bold uppercase tracking-wide text-sky-700">Hoy</p>
@@ -41,7 +50,7 @@ const href = (value: string) => `${basePath}?date=${value}`;
     <a
         href={href(next)}
         aria-label="Día siguiente"
-        class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-slate-600 transition hover:bg-slate-100"
+        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-bold text-slate-600 transition hover:bg-slate-100 sm:h-12 sm:w-12"
     >
         →
     </a>

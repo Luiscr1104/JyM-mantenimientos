@@ -40,18 +40,19 @@ function FitBounds({ points }: { points: Array<[number, number]> }) {
     const map = useMap();
 
     React.useEffect(() => {
-        const observer = new ResizeObserver(() => map.invalidateSize());
-        observer.observe(map.getContainer());
-        return () => observer.disconnect();
-    }, [map]);
+        const fitVisibleMap = () => {
+            const container = map.getContainer();
+            if (container.clientWidth === 0 || container.clientHeight === 0) return;
 
-    React.useEffect(() => {
-        if (points.length === 0) return;
-        if (points.length === 1) {
-            map.setView(points[0], 14);
-            return;
-        }
-        map.fitBounds(points, { padding: [40, 40] });
+            map.invalidateSize();
+            if (points.length === 1) map.setView(points[0], 14);
+            if (points.length > 1) map.fitBounds(points, { padding: [40, 40] });
+        };
+
+        const observer = new ResizeObserver(fitVisibleMap);
+        observer.observe(map.getContainer());
+        fitVisibleMap();
+        return () => observer.disconnect();
     }, [map, points]);
 
     return null;
@@ -71,7 +72,7 @@ export default function RouteMap({ stops, base, polyline, estimated = false, hei
     const center = points[0] ?? DEFAULT_CENTER;
 
     return (
-        <div className="overflow-hidden rounded-xl border border-slate-300">
+        <div className="w-full min-w-0 overflow-hidden rounded-xl border border-slate-300">
             <MapContainer center={center} zoom={12} scrollWheelZoom style={{ height }}>
                 <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
