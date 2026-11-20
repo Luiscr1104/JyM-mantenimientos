@@ -188,6 +188,30 @@ export const waterFillTasks = pgTable(
     ],
 );
 
+export const pushSubscriptions = pgTable('push_subscriptions', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull().unique(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const reminderDeliveries = pgTable('reminder_deliveries', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').$type<'water' | 'pump'>().notNull(),
+    targetId: uuid('target_id').notNull(),
+    dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex('reminder_deliveries_unique').on(table.kind, table.targetId, table.dueAt)]);
+
+export const offlineVisitSyncs = pgTable('offline_visit_syncs', {
+    id: uuid('id').primaryKey(),
+    visitId: uuid('visit_id').notNull().references(() => visits.id, { onDelete: 'cascade' }),
+    actorId: uuid('actor_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export interface RouteStop {
     visitId: string;
     propertyId: string;

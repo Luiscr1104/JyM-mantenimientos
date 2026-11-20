@@ -403,7 +403,8 @@ export default function VisitWorkspace({
             {(editable || status === 'completed') && <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <h2 className="text-lg font-extrabold text-slate-900">Temporizador de bomba</h2>
                 <p className="mt-1 text-xs text-slate-500">
-                    Solo registra tiempo. No controla la bomba ni avisa con la aplicación cerrada.
+                    Solo registra tiempo; no controla la bomba. Si José activó los avisos,
+                    recibirá un recordatorio a los 30 minutos. Usa también una alarma del teléfono.
                 </p>
                 <p role="timer" className="my-4 font-mono text-4xl font-extrabold tabular-nums text-slate-900">
                     {pumpStartedAt ? elapsed(pumpStartedAt, pumpStoppedAt, now) : '00:00:00'}

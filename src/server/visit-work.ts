@@ -1,5 +1,5 @@
-import { eq } from 'drizzle-orm';
-import { db, routePlans, visitEvents, visits } from '@/db';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { db, properties, routePlans, visitEvents, visits } from '@/db';
 import { getCompletionIssue, normalizeChecklist } from '@/lib/visit-work';
 import type { z } from 'zod';
 import type { visitWorkInputSchema } from '@/lib/validation';
@@ -8,6 +8,13 @@ export class VisitWorkError extends Error {
     constructor(message: string, public status = 409) {
         super(message);
     }
+}
+
+export async function listRunningPumps() {
+    return db.select({ visit: visits, alias: properties.alias })
+        .from(visits).innerJoin(properties, eq(visits.propertyId, properties.id))
+        .where(and(eq(visits.status, 'in_progress'), isNotNull(visits.pumpStartedAt),
+            isNull(visits.pumpStoppedAt)));
 }
 
 export async function saveVisitWork(id: string, input: z.infer<typeof visitWorkInputSchema>) {

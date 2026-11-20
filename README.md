@@ -50,6 +50,7 @@ El panel queda en <http://localhost:4321/panel>.
 | `OWNER_NAME` | Seed | Nombre mostrado del dueño |
 | `GOOGLE_MAPS_API_KEY` | Fase 2 | Rutas optimizadas |
 | `PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Fase 3 | Notificaciones push |
+| `VAPID_SUBJECT` / `CRON_SECRET` | Fase 3 | Contacto VAPID y autorización del programador |
 
 Las variables `PUBLIC_*` sí llegan al navegador. El resto son solo de servidor.
 
@@ -132,7 +133,40 @@ scripts/                 seeds de dueño y datos demo
   leads y ajustes.
 - **Fase 2**: agenda, rutas optimizadas con Google Routes, pantalla "Hoy" y modo
   visita con temporizador de bomba.
-- **Fase 3**: notificaciones push, recordatorios de cloro, calculadora de
-  químicos, protocolo de salida y funcionamiento offline.
+- **Fase 3**: PWA instalable, avisos para José (llaves y bomba), protocolo de
+  salida y visitas offline cifradas con PIN y cierre pendiente de sincronización.
+  Mediciones, alertas de cloro y calculadora de químicos quedan pospuestas.
 - **Fase 4**: reportes al cliente por WhatsApp, historial y galería.
 - **Fase 5**: control de pagos, inventario y métricas.
+
+## Fase 3: puesta en marcha
+
+1. Aplicar las migraciones `0007` y `0008` antes de desplegar el código que las usa.
+2. Generar un par de claves con `pnpm exec web-push generate-vapid-keys` y configurar
+   `PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` y `CRON_SECRET`
+   en `.env.local` y Vercel Production. Conservar los secretos fuera del repositorio.
+   Ejecutar `pnpm cron:setup`: habilita `pg_cron` y `pg_net` en Supabase,
+   guarda el token de Vercel cifrado en Vault y prepara un trabajo **inactivo**
+   cada minuto. Después de migrar y desplegar, ejecutar `pnpm cron:activate`
+   para probar el endpoint y activar el trabajo. Sin activar el programador
+   no se enviarán los avisos aunque el teléfono esté suscrito.
+   Actualmente la ruta usa `jym-mantenimientos.vercel.app`; el dominio
+   `jymmantenimientos.com` aún no resuelve. Para migrar el programador al
+   dominio definitivo, actualizar `REMINDER_CRON_URL` y revisar el trabajo antes
+   de activarlo: el script no sobrescribe un trabajo existente distinto.
+3. En **Ajustes**, el dueño selecciona la cuenta de José; José instala la PWA desde
+   su navegador y activa los avisos desde su cuenta. En iPhone, primero debe añadir
+   la PWA a la pantalla de inicio. Probar envío y permisos en el teléfono real.
+4. En **Hoy**, antes de salir, descargar las visitas con un PIN local (mínimo 8
+   caracteres). Se abrirá automáticamente **Visitas sin conexión** con internet
+   para guardar los recursos de la pantalla. Solo se descargan las visitas de hoy: no se guarda
+   el HTML privado del panel. Los borradores se cifran en IndexedDB; el PIN no se
+   guarda. Al cerrar sesión se borran los datos locales, previa advertencia si hay
+   trabajo sin sincronizar.
+5. En terreno, el cierre offline queda **pendiente de sincronizar**. Cuando vuelva
+   internet, reabrir la PWA, introducir el PIN y sincronizar. La operación es
+   idempotente; si alguien cambió la visita en el servidor, se rechaza con conflicto
+   y se conserva el borrador para revisión manual. El seguimiento de floculación
+   y las tareas de llaves de llenado se agendan online tras sincronizar; no se
+   debe dejar una llave abierta sin una alarma independiente del teléfono. No
+   hay push garantizado sin conexión: usar también una alarma para la bomba.

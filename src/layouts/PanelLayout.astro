@@ -37,6 +37,8 @@ const isActive = (href: string, exact: boolean) =>
         <link rel="icon" type="image/png" href="/logoJyM.png" />
         <meta name="robots" content="noindex, nofollow" />
         <meta name="theme-color" content="#ffffff" />
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <link rel="apple-touch-icon" href="/logoJyM.png" />
         <title>{title} | Panel JyM</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -172,6 +174,29 @@ const isActive = (href: string, exact: boolean) =>
                 </nav>
             </div>
         </div>
+        <script>
+            import { clearOfflineData, listEncrypted } from '@/lib/offline-storage';
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    void navigator.serviceWorker.register('/sw.js', { scope: '/panel' })
+                        .catch((error) => console.warn('No se pudo activar la PWA:', error));
+                });
+            }
+            document.querySelectorAll<HTMLFormElement>('form[action="/api/auth/signout"]').forEach((form) => {
+                form.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    try {
+                        const entries = await listEncrypted();
+                        if (entries.some((entry) => entry.pending) &&
+                            !window.confirm('Hay visitas sin sincronizar. Cerrar sesión borrará definitivamente el trabajo local. ¿Continuar?')) return;
+                        await clearOfflineData();
+                        form.submit();
+                    } catch {
+                        window.alert('No se pudieron borrar los datos offline. Cierra otras pestañas del panel e inténtalo de nuevo.');
+                    }
+                });
+            });
+        </script>
     </body>
 </html>
 

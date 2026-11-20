@@ -95,8 +95,8 @@ export default function WaterFillWidget({
         <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm sm:p-5">
             <h2 className="text-lg font-extrabold text-slate-900">Llaves de llenado pendientes</h2>
             <p className="mt-1 text-xs text-amber-900">
-                Solo se muestran dentro del panel. No hay alarmas ni avisos con la aplicación cerrada:
-                pon también una alarma en el teléfono.
+                Permanecen visibles en «Hoy». Si José activó los avisos, recibirá un recordatorio
+                cuando venza el plazo. Pon también una alarma en el teléfono.
             </p>
             {error && <p role="alert" className="mt-3 text-sm font-semibold text-red-700">{error}</p>}
             {message && <p role="status" className="mt-3 text-sm font-semibold text-emerald-800">{message}</p>}

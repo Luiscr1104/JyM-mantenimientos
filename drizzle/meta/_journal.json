@@ -50,6 +50,20 @@
       "when": 1795131320025,
       "tag": "0006_fluffy_vulture",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795143454838,
+      "tag": "0007_wandering_black_tarantula",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795143718160,
+      "tag": "0008_typical_firelord",
+      "breakpoints": true
     }
   ]
 }
