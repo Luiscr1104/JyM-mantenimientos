@@ -71,15 +71,17 @@ const stats = [
             </section>
         )}
         {openWaterTasks.length > 0 && (
-            <WaterFillWidget client:load compact initial={openWaterTasks.map(({ task, property }) => ({
-                id: task.id,
-                propertyId: property.id,
-                propertyName: property.alias,
-                visitId: task.visitId,
-                createdAt: task.createdAt.toISOString(),
-                dueAt: task.dueAt.toISOString(),
-                delayMinutes: task.delayMinutes,
-            }))} />
+            <div>
+                <WaterFillWidget client:load compact initial={openWaterTasks.map(({ task, property }) => ({
+                    id: task.id,
+                    propertyId: property.id,
+                    propertyName: property.alias,
+                    visitId: task.visitId,
+                    createdAt: task.createdAt.toISOString(),
+                    dueAt: task.dueAt.toISOString(),
+                    delayMinutes: task.delayMinutes,
+                }))} />
+            </div>
         )}
         {
             ok === 'route' && (
