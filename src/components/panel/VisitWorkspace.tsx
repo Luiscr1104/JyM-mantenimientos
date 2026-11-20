@@ -12,6 +12,8 @@ import {
     type VisitChecklistKey,
     type WorkChecklist,
 } from '@/lib/visit-work';
+import { deleteLocal, getLocal, putLocal, syncVisit, withVisitLock, type LocalVisit } from '@/lib/automatic-visits';
+import type { ProductKey } from '@/lib/products';
 
 type Status = 'scheduled' | 'in_progress' | 'completed' | 'skipped';
 type SaveState = 'saved' | 'pending' | 'saving' | 'error';
@@ -32,6 +34,7 @@ const eventLabels: Record<EventKind, string> = {
 
 interface Props {
     id: string;
+    userId: string;
     date: string;
     propertyId: string;
     propertyName: string;
@@ -61,7 +64,7 @@ interface Draft {
 }
 
 const saveLabels: Record<SaveState, string> = {
-    saved: 'Progreso guardado',
+    saved: 'Guardado en este dispositivo',
     pending: 'Cambios sin guardar',
     saving: 'Guardando…',
     error: 'Error al guardar',
@@ -76,7 +79,7 @@ function elapsed(start: string, end: string | null, now: number) {
 }
 
 export default function VisitWorkspace({
-    id, date, propertyId, propertyName, initial, initialProducts, initialWaterTasks,
+    id, userId, date, propertyId, propertyName, initial, initialProducts, initialWaterTasks,
     initialFollowUp, initialEvents,
 }: Props) {
     const [status, setStatus] = React.useState<Status>(initial.status);
@@ -98,15 +101,102 @@ export default function VisitWorkspace({
     const [dirty, setDirty] = React.useState(false);
     const [busy, setBusy] = React.useState(false);
     const [error, setError] = React.useState('');
+    const [local, setLocal] = React.useState<LocalVisit | null>(null);
+    const [loaded, setLoaded] = React.useState(false);
+    const localRef = React.useRef<LocalVisit | null>(null);
+    const dirtyRef = React.useRef(false);
     const queue = React.useRef<Promise<void>>(Promise.resolve());
     const version = React.useRef(0);
-    const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const syncTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    React.useEffect(() => {
+        let active = true;
+        async function load() {
+            try {
+                let visit = await getLocal(userId, id);
+                if (!visit && navigator.onLine && initial.status !== 'completed' && initial.status !== 'skipped') {
+                    const response = await fetch(`/api/panel/offline/prepare?date=${date}`, { cache: 'no-store' });
+                    if (!response.ok) throw new Error('No se pudo preparar esta visita en el teléfono.');
+                    const data = await response.json() as { userId: string; visits: LocalVisit[] };
+                    if (data.userId !== userId) throw new Error('La sesión cambió. Vuelve a entrar.');
+                    const prepared = data.visits.find((entry) => entry.id === id);
+                    if (prepared) {
+                        await withVisitLock(userId, id, async () => {
+                            const existing = await getLocal(userId, id);
+                            if (!existing) await putLocal({ ...prepared, ownerId: userId });
+                        });
+                        visit = await getLocal(userId, id);
+                    }
+                }
+                if (!active) return;
+                if (visit) applyLocal(visit);
+                else if (initial.status !== 'completed' && initial.status !== 'skipped')
+                    setError('Esta visita no se guardó antes de perder internet. Conéctate para prepararla.');
+            } catch (reason) {
+                if (active) setError(reason instanceof Error ? reason.message : 'No se pudo abrir el almacenamiento local.');
+            } finally {
+                if (active) setLoaded(true);
+            }
+        }
+        void load();
+        const onChange = () => {
+            void getLocal(userId, id).then((visit) => {
+                if (active && visit && !dirtyRef.current && visit.syncId !== localRef.current?.syncId) applyLocal(visit);
+                if (active && visit && !dirtyRef.current && visit.syncId === localRef.current?.syncId) {
+                    localRef.current = visit;
+                    setLocal(visit);
+                }
+                if (active && !visit && localRef.current?.completedAt) {
+                    localRef.current = null;
+                    setLocal(null);
+                    setStatus('completed');
+                    setSaveState('saved');
+                }
+            }).catch(() => {});
+        };
+        window.addEventListener('jym-visits-changed', onChange);
+        window.addEventListener('focus', onChange);
+        return () => {
+            active = false;
+            window.removeEventListener('jym-visits-changed', onChange);
+            window.removeEventListener('focus', onChange);
+        };
+    }, [id, userId, date]);
+
+    function applyLocal(visit: LocalVisit) {
+        localRef.current = visit;
+        setLocal(visit);
+        setStatus(visit.completedAt ? 'completed' : visit.status);
+        setStartedAt(visit.startedAt);
+        setPumpStartedAt(visit.pumpStartedAt);
+        setPumpStoppedAt(visit.pumpStoppedAt);
+        setLeftAt(visit.completedAt);
+        setDraft({ ...visit.work, checklist: normalizeChecklist(visit.work.checklist) });
+    }
+
+    async function changeLocal(change: (visit: LocalVisit) => LocalVisit, updateDraft = true) {
+        const updated = await withVisitLock(userId, id, async () => {
+            const current = await getLocal(userId, id);
+            if (!current) throw new Error('Esta visita no está disponible en el teléfono.');
+            if (current.conflict) throw new Error(current.conflict);
+            const next = { ...change(current), pending: true, syncId: crypto.randomUUID() };
+            await putLocal(next);
+            return next;
+        });
+        if (updateDraft) applyLocal(updated);
+        else { localRef.current = updated; setLocal(updated); }
+        if (navigator.onLine) {
+            if (syncTimer.current) clearTimeout(syncTimer.current);
+            syncTimer.current = setTimeout(() => { void syncVisit(userId, id); }, 1_000);
+        }
+    }
+    React.useEffect(() => () => { if (syncTimer.current) clearTimeout(syncTimer.current); }, []);
 
     const running = Boolean(pumpStartedAt && !pumpStoppedAt);
     const selectedTasks = tasksForTypes(draft.workTypes);
     const completedTasks = selectedTasks.filter(({ key }) => draft.checklist[key]).length;
     const issue = getCompletionIssue(draft.checklist, draft.pendingReason, running, draft.workTypes);
-    const editable = status === 'in_progress';
+    const editable = status === 'in_progress' && loaded && !!local && !local.conflict;
 
     React.useEffect(() => {
         if (!running) return;
@@ -138,10 +228,11 @@ export default function VisitWorkspace({
     function persist(value: Draft, revision: number): Promise<void> {
         const job = queue.current.catch(() => {}).then(async () => {
             setSaveState('saving');
-            await request(`/api/panel/visits/${id}/work`, 'PUT', value);
+            await changeLocal((current) => ({ ...current, work: value }), false);
             if (revision === version.current) {
-                setSaveState('saved');
+                setSaveState('pending');
                 setDirty(false);
+                dirtyRef.current = false;
                 setError('');
             }
         }).catch((reason: unknown) => {
@@ -153,33 +244,20 @@ export default function VisitWorkspace({
         return job;
     }
 
-    React.useEffect(() => {
-        if (!dirty || !editable) return;
-        const revision = ++version.current;
-        timer.current = setTimeout(() => {
-            timer.current = null;
-            void persist(draft, revision).catch(() => {});
-        }, 650);
-        return () => {
-            if (timer.current) clearTimeout(timer.current);
-            timer.current = null;
-        };
-    }, [draft, dirty, editable]);
-
     function edit(value: Draft) {
         setDraft(value);
         setDirty(true);
+        dirtyRef.current = true;
         setSaveState('pending');
         setError('');
+        void persist(value, ++version.current).catch(() => {});
     }
 
     async function saveNow() {
         if (!editable) return false;
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = null;
-        const revision = ++version.current;
         try {
-            await persist(draft, revision);
+            await queue.current;
+            if (dirty) await persist(draft, ++version.current);
             return true;
         } catch {
             return false;
@@ -190,10 +268,9 @@ export default function VisitWorkspace({
         setBusy(true);
         setError('');
         try {
-            const data = await request(`/api/panel/visits/${id}`, 'POST', { action: 'start' });
-            setStatus(data.visit.status);
-            setStartedAt(data.visit.startedAt);
-            setEvents((current) => [...current, { kind: 'arrival', occurredAt: data.visit.startedAt, actor: null }]);
+            const at = new Date().toISOString();
+            await changeLocal((current) => ({ ...current, startedAt: at, status: 'in_progress' }));
+            setEvents((current) => [...current, { kind: 'arrival', occurredAt: at, actor: null }]);
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : 'No se pudo iniciar la visita.');
         } finally {
@@ -205,9 +282,10 @@ export default function VisitWorkspace({
         setBusy(true);
         setError('');
         try {
-            const data = await request(`/api/panel/visits/${id}/pump`, 'POST', { action });
-            setPumpStartedAt(data.visit.pumpStartedAt);
-            setPumpStoppedAt(data.visit.pumpStoppedAt);
+            const at = new Date().toISOString();
+            await changeLocal((current) => action === 'start'
+                ? { ...current, pumpStartedAt: at, pumpStoppedAt: null }
+                : { ...current, pumpStoppedAt: at });
             setNow(Date.now());
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : 'No se pudo actualizar la bomba.');
@@ -224,10 +302,9 @@ export default function VisitWorkspace({
             return;
         }
         try {
-            const data = await request(`/api/panel/visits/${id}`, 'POST', { action: 'complete' });
-            setStatus(data.visit.status);
-            setLeftAt(data.visit.leftAt);
-            setEvents((current) => [...current, { kind: 'departure', occurredAt: data.visit.completedAt, actor: null }]);
+            const at = new Date().toISOString();
+            await changeLocal((current) => ({ ...current, completedAt: at }));
+            setEvents((current) => [...current, { kind: 'departure', occurredAt: at, actor: null }]);
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : 'No se pudo completar la visita.');
         } finally {
@@ -255,6 +332,26 @@ export default function VisitWorkspace({
 
     return (
         <div className="space-y-5">
+            {!loaded && <p role="status">Abriendo visita guardada en el teléfono…</p>}
+            {local?.conflict && <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-bold text-red-900">
+                Conflicto: {local.conflict} La copia local no se borrará. No continúes editando hasta revisar el registro con conexión.
+                <div className="mt-2 flex flex-wrap gap-3">
+                    <a href={`/panel/visitas/${id}`} target="_blank" rel="noopener noreferrer" className="underline">
+                        Comparar con el servidor ↗
+                    </a>
+                    <button type="button" className="underline" onClick={() => {
+                        if (!navigator.onLine || !window.confirm(
+                            'Solo descarta la copia local cuando hayas confirmado que TODO el trabajo está en el servidor. No se puede deshacer.',
+                        )) return;
+                        void deleteLocal(userId, id).then(() => window.location.reload())
+                            .catch(() => setError('No se pudo descartar la copia local.'));
+                    }}>Ya resolví el conflicto: descartar copia local</button>
+                </div>
+            </div>}
+            {local?.pending && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+                {local.completedAt ? 'Salida guardada en el teléfono; pendiente de confirmar en el servidor.' :
+                    'Cambios guardados en el teléfono; pendientes de sincronizar.'}
+            </p>}
             <p className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                 Estado:
                 <span aria-live="polite" className={`rounded-full border px-3 py-1 text-xs font-bold ${visitStatusStyle(status)}`}>
@@ -292,7 +389,7 @@ export default function VisitWorkspace({
                     {error}
                 </div>
             )}
-            {status === 'scheduled' && (
+            {status === 'scheduled' && loaded && local && (
                 <section className="rounded-2xl border border-sky-200 bg-sky-50 p-5">
                     <p className="mb-4 text-sm text-sky-900">Al llegar a la propiedad, registra la hora para iniciar la parada.</p>
                     <button type="button" onClick={start} disabled={busy}
@@ -303,7 +400,8 @@ export default function VisitWorkspace({
             )}
             {status === 'completed' && (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm font-semibold text-emerald-900">
-                    Salida registrada. El trabajo y las horas están disponibles para consulta.
+                    {local?.pending ? 'Salida local pendiente de sincronizar. No está confirmada en el servidor.' :
+                        'Salida registrada. El trabajo y las horas están disponibles para consulta.'}
                     <a href={`/panel/ruta?date=${date}`} className="mt-3 block font-bold text-sky-800 underline">Volver a la ruta</a>
                 </div>
             )}
@@ -362,7 +460,7 @@ export default function VisitWorkspace({
                 </div>
             </section>}
 
-            {status === 'completed' && draft.workTypes.includes('flocculation') && (
+            {status === 'completed' && !local?.pending && draft.workTypes.includes('flocculation') && (
                 <section className="rounded-2xl border border-sky-200 bg-sky-50 p-4 sm:p-5">
                     <h2 className="text-lg font-extrabold text-slate-900">Seguimiento de floculación</h2>
                     {followUp ? (
@@ -394,11 +492,45 @@ export default function VisitWorkspace({
             )}
 
             {(editable || status === 'completed') && <VisitProducts
-                visitId={id} editable={editable || status === 'completed'} initial={initialProducts} />}
+                visitId={id} editable={editable && !!local && !local.conflict}
+                initial={initialProducts}
+                localEntries={local ? local.products.map((entry, index) => ({
+                    id: `base-${index}`, product: entry.product, quantity: String(entry.quantity),
+                })).filter((_, index) => !(local.removedProducts ?? []).includes(index))
+                    .concat(local.addedProducts.map((entry, index) => ({
+                    id: `added-${index}`, product: entry.product, quantity: String(entry.quantity),
+                }))) : undefined}
+                onLocalChange={local ? async (action) => {
+                    if (action.action === 'add') {
+                        if (!Number.isFinite(action.quantity) || action.quantity < 0.01 || action.quantity > 100000 ||
+                            Math.round(action.quantity * 100) !== action.quantity * 100) throw new Error('Cantidad inválida.');
+                        await changeLocal((current) => ({ ...current, addedProducts: [
+                            ...current.addedProducts, { product: action.product as ProductKey, quantity: action.quantity },
+                        ] }));
+                    } else {
+                        if (action.productId.startsWith('base-')) {
+                            const index = Number(action.productId.slice(5));
+                            await changeLocal((current) => ({ ...current, removedProducts: [
+                                ...(current.removedProducts ?? []), index,
+                            ] }));
+                        } else {
+                            const index = Number(action.productId.slice(6));
+                            await changeLocal((current) => ({
+                                ...current, addedProducts: current.addedProducts.filter((_, i) => i !== index),
+                            }));
+                        }
+                    }
+                } : undefined} />}
 
             {(editable || status === 'completed' || initialWaterTasks.length > 0) && <WaterFillWidget initial={initialWaterTasks}
                 visitId={id} propertyId={propertyId} propertyName={propertyName}
-                canCreate={editable} />}
+                canCreate={editable && typeof navigator !== 'undefined' && navigator.onLine && !local?.pending} />}
+            {editable && (typeof navigator === 'undefined' || !navigator.onLine || local?.pending) && (
+                <p className="text-xs text-amber-900">
+                    Las tareas de llaves de llenado y los seguimientos se agendan al volver la conexión
+                    y después de confirmar esta visita en el servidor. Usa una alarma del teléfono.
+                </p>
+            )}
 
             {(editable || status === 'completed') && <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <h2 className="text-lg font-extrabold text-slate-900">Temporizador de bomba</h2>
@@ -459,9 +591,11 @@ export default function VisitWorkspace({
                 </div>
             </section>}
 
-            {editable && (
+            {editable && loaded && local && (
                 <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <p aria-live="polite" className="text-sm font-semibold text-slate-600">{saveLabels[saveState]}</p>
+                    <p aria-live="polite" className="text-sm font-semibold text-slate-600">
+                        {dirty ? saveLabels[saveState] : local.pending ? 'Guardado localmente · pendiente de sincronizar' : 'Confirmado en el servidor'}
+                    </p>
                     <button type="button" disabled={busy} onClick={() => void saveNow()}
                         className="panel-btn w-full border border-sky-300 bg-sky-50 text-sky-800 sm:w-auto">
                         Guardar ahora

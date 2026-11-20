@@ -157,16 +157,20 @@ scripts/                 seeds de dueño y datos demo
 3. En **Ajustes**, el dueño selecciona la cuenta de José; José instala la PWA desde
    su navegador y activa los avisos desde su cuenta. En iPhone, primero debe añadir
    la PWA a la pantalla de inicio. Probar envío y permisos en el teléfono real.
-4. En **Hoy**, antes de salir, descargar las visitas con un PIN local (mínimo 8
-   caracteres). Se abrirá automáticamente **Visitas sin conexión** con internet
-   para guardar los recursos de la pantalla. Solo se descargan las visitas de hoy: no se guarda
-   el HTML privado del panel. Los borradores se cifran en IndexedDB; el PIN no se
-   guarda. Al cerrar sesión se borran los datos locales, previa advertencia si hay
-   trabajo sin sincronizar.
-5. En terreno, el cierre offline queda **pendiente de sincronizar**. Cuando vuelva
-   internet, reabrir la PWA, introducir el PIN y sincronizar. La operación es
-   idempotente; si alguien cambió la visita en el servidor, se rechaza con conflicto
-   y se conserva el borrador para revisión manual. El seguimiento de floculación
-   y las tareas de llaves de llenado se agendan online tras sincronizar; no se
-   debe dejar una llave abierta sin una alarma independiente del teléfono. No
-   hay push garantizado sin conexión: usar también una alarma para la bomba.
+4. Abrir **Hoy** con internet: la PWA guarda automáticamente las visitas del día,
+   sus páginas y recursos para usarlos en ese teléfono. No hay PIN ni botón de
+   descarga. Una visita nunca cargada en el teléfono no se puede abrir sin red.
+   La copia local (incluidos códigos de acceso) **no está cifrada con un PIN**:
+   proteger el teléfono con bloqueo de pantalla. Al cerrar sesión se borran las
+   copias y se advierte si hay cambios pendientes. Los registros anteriores con
+   PIN se mantienen accesibles desde la advertencia del panel hasta sincronizarlos.
+5. Usar la **pantalla normal de la visita**, incluso sin conexión. Llegada,
+   progreso, productos, bomba y salida se guardan en el teléfono antes de
+   intentar enviar al servidor. Con la app abierta se reintenta al recuperar
+   conexión, al volver a enfocarla y periódicamente; en iPhone no se garantiza
+   sincronización con la app cerrada. La salida solo está confirmada cuando
+   desaparece el aviso «pendiente de sincronizar». Ante un conflicto se conserva
+   la copia local para compararla con el servidor. El seguimiento de floculación
+   y las tareas de llaves de llenado requieren internet; no dejar una llave
+   abierta sin alarma independiente. No hay push garantizado sin conexión:
+   usar también una alarma para la bomba. Probar el flujo en ambos teléfonos.

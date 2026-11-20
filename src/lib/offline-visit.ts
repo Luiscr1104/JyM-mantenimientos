@@ -25,6 +25,7 @@ export interface OfflineVisit {
     };
     products: Array<{ product: ProductKey; quantity: number }>;
     addedProducts: Array<{ product: ProductKey; quantity: number }>;
+    removedProducts?: number[];
     syncId: string;
     pending: boolean;
 }
@@ -41,4 +42,5 @@ export const offlineSyncSchema = z.object({
     work: visitWorkInputSchema,
     existingProducts: z.array(visitProductSchema).max(100),
     products: z.array(visitProductSchema).max(100),
+    removedProducts: z.array(z.number().int().min(0).max(99)).max(100).default([]),
 });

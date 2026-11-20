@@ -50,6 +50,7 @@ export default function WaterFillWidget({
     async function create(event: React.FormEvent<HTMLFormElement>) {
         event.preventDefault();
         if (!propertyId || !propertyName) return;
+        if (!navigator.onLine) { setError('Registra la llave al recuperar internet; mientras tanto usa una alarma del teléfono.'); return; }
         setBusy(true);
         setError('');
         setMessage('');
@@ -74,6 +75,7 @@ export default function WaterFillWidget({
     }
 
     async function close(id: string) {
+        if (!navigator.onLine) { setError('Comprueba físicamente la llave y confirma su cierre al recuperar internet.'); return; }
         if (!window.confirm('¿Comprobaste físicamente que la llave quedó cerrada?')) return;
         setBusy(true);
         setError('');

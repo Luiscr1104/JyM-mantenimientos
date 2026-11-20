@@ -11,9 +11,12 @@ interface Props {
     visitId: string;
     editable: boolean;
     initial: ProductEntry[];
+    localEntries?: ProductEntry[];
+    onLocalChange?: (action: { action: 'add'; product: ProductKey; quantity: number } |
+        { action: 'delete'; productId: string }) => Promise<void>;
 }
 
-export default function VisitProducts({ visitId, editable, initial }: Props) {
+export default function VisitProducts({ visitId, editable, initial, localEntries, onLocalChange }: Props) {
     const [entries, setEntries] = React.useState(initial);
     const [product, setProduct] = React.useState<ProductKey>('granulated_chlorine');
     const [quantity, setQuantity] = React.useState('');
@@ -24,6 +27,12 @@ export default function VisitProducts({ visitId, editable, initial }: Props) {
         setBusy(true);
         setError('');
         try {
+            if (onLocalChange) {
+                await onLocalChange(body as { action: 'add'; product: ProductKey; quantity: number } |
+                    { action: 'delete'; productId: string });
+                setQuantity('');
+                return;
+            }
             const response = await fetch(`/api/panel/visits/${visitId}/products`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -46,9 +55,9 @@ export default function VisitProducts({ visitId, editable, initial }: Props) {
             <h2 className="text-lg font-extrabold text-slate-900">Productos aplicados</h2>
             <p className="mt-1 text-xs text-slate-500">Registra lo que se aplicó realmente a esta piscina.</p>
 
-            {entries.length > 0 ? (
+            {(localEntries ?? entries).length > 0 ? (
                 <ul className="mt-4 space-y-2">
-                    {entries.map((entry) => (
+                    {(localEntries ?? entries).map((entry) => (
                         <li key={entry.id} className="flex min-h-12 items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-2 text-sm">
                             <span className="font-semibold text-slate-800">{productInfo(entry.product).label}</span>
                             <span className="flex shrink-0 items-center gap-3">

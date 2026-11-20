@@ -20,7 +20,6 @@ import { getRoutePlan } from '@/server/routes';
 import { getSettings } from '@/server/settings';
 import { listVisitsByDate, suggestVisits } from '@/server/visits';
 import WaterFillWidget from '@/components/panel/WaterFillWidget';
-import OfflinePrep from '@/components/panel/OfflinePrep';
 import { listOpenWaterTasks } from '@/server/water-fill';
 import { listRunningPumps } from '@/server/visit-work';
 import { workTypesLabel } from '@/lib/visit-types';
@@ -56,7 +55,6 @@ const stats = [
     <PageHeader title="Hoy" description={formatLongDate(today)} />
 
     <div class="space-y-5">
-        <OfflinePrep client:load />
         {runningPumps.length > 0 && (
             <section class="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm sm:p-5">
                 <h2 class="font-extrabold text-amber-950">Bombas pendientes de verificar</h2>

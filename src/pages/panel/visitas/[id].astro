@@ -59,6 +59,7 @@ const location = property.lat != null && property.lng != null
 
         <VisitWorkspace client:load
             id={visit.id}
+            userId={Astro.locals.user!.id}
             date={visit.scheduledFor}
             propertyId={property.id}
             propertyName={property.alias}

@@ -11,7 +11,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
     if (!parsed.success) return json({ error: firstError(parsed.error) }, 400);
     try {
         const result = await syncOfflineVisit(parsed.data, locals.user.id);
-        return json({ ok: true, alreadySynced: result.alreadySynced });
+        return json({ ok: true, alreadySynced: result.alreadySynced,
+            updatedAt: result.visit.updatedAt.toISOString(), status: result.visit.status });
     } catch (error) {
         if (error instanceof VisitWorkError) return json({ error: error.message }, error.status);
         console.error('[offline.sync]', error);
