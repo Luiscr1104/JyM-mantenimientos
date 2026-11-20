@@ -43,6 +43,13 @@
       "when": 1795111669901,
       "tag": "0005_many_the_enforcers",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795131320025,
+      "tag": "0006_fluffy_vulture",
+      "breakpoints": true
     }
   ]
 }

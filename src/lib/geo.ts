@@ -17,6 +17,37 @@ export function haversineMeters(a: LatLng, b: LatLng): number {
     return 2 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(h));
 }
 
+/** Orden estimado de paradas sin vuelta al punto de partida. */
+export function estimateRoute(origin: LatLng, stops: LatLng[]) {
+    const pending = stops.map((_, index) => index);
+    const order: number[] = [];
+    let current = origin;
+    let totalMeters = 0;
+
+    while (pending.length > 0) {
+        let best = 0;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        for (let position = 0; position < pending.length; position += 1) {
+            const distance = haversineMeters(current, stops[pending[position]]);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = position;
+            }
+        }
+        const [nextIndex] = pending.splice(best, 1);
+        order.push(nextIndex);
+        totalMeters += bestDistance;
+        current = stops[nextIndex];
+    }
+
+    const distanceMeters = Math.round(totalMeters * 1.35);
+    return {
+        order,
+        distanceMeters,
+        durationSeconds: Math.round((distanceMeters / 1000 / 35) * 3600),
+    };
+}
+
 /** Decodifica una polilínea codificada de Google (precisión 5). */
 export function decodePolyline(encoded: string): Array<[number, number]> {
     const points: Array<[number, number]> = [];
@@ -54,18 +85,19 @@ export function decodePolyline(encoded: string): Array<[number, number]> {
     return points;
 }
 
-/** Enlace a Google Maps con la ruta completa (máximo 9 paradas intermedias). */
-export function googleMapsRouteUrl(base: LatLng, stops: LatLng[]): string | null {
-    if (stops.length === 0 || stops.length > 9) return null;
+/** Enlace a Google Maps hasta la última visita (máximo 9 paradas intermedias). */
+export function googleMapsRouteUrl(origin: LatLng, stops: LatLng[]): string | null {
+    if (stops.length === 0 || stops.length > 10) return null;
 
-    const waypoints = stops.map((stop) => `${stop.lat},${stop.lng}`).join('|');
+    const waypoints = stops.slice(0, -1).map((stop) => `${stop.lat},${stop.lng}`).join('|');
+    const destination = stops[stops.length - 1];
     const params = new URLSearchParams({
         api: '1',
-        origin: `${base.lat},${base.lng}`,
-        destination: `${base.lat},${base.lng}`,
-        waypoints,
+        origin: `${origin.lat},${origin.lng}`,
+        destination: `${destination.lat},${destination.lng}`,
         travelmode: 'driving',
     });
+    if (waypoints) params.set('waypoints', waypoints);
 
     return `https://www.google.com/maps/dir/?${params.toString()}`;
 }

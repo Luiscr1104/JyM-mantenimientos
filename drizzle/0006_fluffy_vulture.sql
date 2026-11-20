@@ -1,0 +1,1 @@
+ALTER TABLE "route_plans" ADD COLUMN "origin" jsonb;

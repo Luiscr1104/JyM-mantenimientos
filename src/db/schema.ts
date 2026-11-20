@@ -196,12 +196,20 @@ export interface RouteStop {
     lng: number;
 }
 
+export interface RouteOrigin {
+    lat: number;
+    lng: number;
+    label: string;
+    kind: 'base' | 'gps' | 'property';
+}
+
 export const routePlans = pgTable(
     'route_plans',
     {
         id: uuid('id').primaryKey().defaultRandom(),
         visitDate: date('visit_date').notNull(),
         stops: jsonb('stops').$type<RouteStop[]>().notNull(),
+        origin: jsonb('origin').$type<RouteOrigin>(),
         distanceMeters: integer('distance_meters'),
         durationSeconds: integer('duration_seconds'),
         polyline: text('polyline'),

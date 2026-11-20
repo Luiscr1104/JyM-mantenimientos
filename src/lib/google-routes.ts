@@ -1,5 +1,5 @@
 import { GOOGLE_MAPS_API_KEY } from 'astro:env/server';
-import { haversineMeters, type LatLng } from './geo';
+import { estimateRoute, type LatLng } from './geo';
 
 export interface RouteOptimization {
     order: number[];
@@ -11,8 +11,6 @@ export interface RouteOptimization {
 
 const ENDPOINT = 'https://routes.googleapis.com/directions/v2:computeRoutes';
 const MAX_WAYPOINTS = 25;
-const ROAD_FACTOR = 1.35;
-const AVERAGE_SPEED_KMH = 35;
 
 export function isGoogleRoutesEnabled(): boolean {
     // El modo estimado es el predeterminado: no genera consumo de Google.
@@ -30,7 +28,11 @@ function googleLatLng(point: LatLng) {
     return { location: { latLng: { latitude: point.lat, longitude: point.lng } } };
 }
 
-async function callGoogle(base: LatLng, stops: LatLng[]): Promise<RouteOptimization> {
+async function callGoogle(origin: LatLng, stops: LatLng[], suggestedOrder: number[]): Promise<RouteOptimization> {
+    // Google optimiza puntos intermedios, pero necesita un destino fijo.
+    // Elegimos la última parada con el orden estimado y optimizamos las anteriores.
+    const destinationIndex = suggestedOrder[suggestedOrder.length - 1];
+    const intermediateIndices = suggestedOrder.slice(0, -1);
     const response = await fetch(ENDPOINT, {
         method: 'POST',
         signal: AbortSignal.timeout(8_000),
@@ -41,12 +43,14 @@ async function callGoogle(base: LatLng, stops: LatLng[]): Promise<RouteOptimizat
                 'routes.distanceMeters,routes.duration,routes.optimizedIntermediateWaypointIndex,routes.polyline.encodedPolyline',
         },
         body: JSON.stringify({
-            origin: googleLatLng(base),
-            destination: googleLatLng(base),
-            intermediates: stops.map(googleLatLng),
+            origin: googleLatLng(origin),
+            destination: googleLatLng(stops[destinationIndex]),
+            ...(intermediateIndices.length > 0 && {
+                intermediates: intermediateIndices.map((index) => googleLatLng(stops[index])),
+            }),
             travelMode: 'DRIVE',
             routingPreference: 'TRAFFIC_UNAWARE',
-            optimizeWaypointOrder: true,
+            optimizeWaypointOrder: intermediateIndices.length > 1,
             polylineQuality: 'OVERVIEW',
         }),
     });
@@ -61,19 +65,20 @@ async function callGoogle(base: LatLng, stops: LatLng[]): Promise<RouteOptimizat
 
     if (!route) throw new Error('Google Routes no devolvió ninguna ruta.');
 
-    const identity = stops.map((_, index) => index);
+    const identity = intermediateIndices.map((_, index) => index);
     const optimized = route.optimizedIntermediateWaypointIndex ?? [];
 
     const order =
-        optimized.length === stops.length &&
-        optimized.every((index) => Number.isInteger(index) && index >= 0 && index < stops.length)
-            ? optimized
-            : identity;
+        optimized.length === identity.length &&
+        new Set(optimized).size === identity.length &&
+        optimized.every((index) => Number.isInteger(index) && index >= 0 && index < identity.length)
+            ? optimized.map((index) => intermediateIndices[index])
+            : intermediateIndices;
 
     const duration = route.duration ? Number(String(route.duration).replace('s', '')) : null;
 
     return {
-        order,
+        order: [...order, destinationIndex],
         distanceMeters: route.distanceMeters ?? null,
         durationSeconds: Number.isFinite(duration) ? duration : null,
         polyline: route.polyline?.encodedPolyline ?? null,
@@ -81,57 +86,19 @@ async function callGoogle(base: LatLng, stops: LatLng[]): Promise<RouteOptimizat
     };
 }
 
-function fallback(base: LatLng, stops: LatLng[]): RouteOptimization {
-    const pending = stops.map((_, index) => index);
-    const order: number[] = [];
-    let current = base;
-    let totalMeters = 0;
-
-    while (pending.length > 0) {
-        let best = 0;
-        let bestDistance = Number.POSITIVE_INFINITY;
-
-        for (let position = 0; position < pending.length; position += 1) {
-            const distance = haversineMeters(current, stops[pending[position]]);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                best = position;
-            }
-        }
-
-        const [nextIndex] = pending.splice(best, 1);
-        order.push(nextIndex);
-        totalMeters += bestDistance;
-        current = stops[nextIndex];
-    }
-
-    // Vuelta a la base.
-    totalMeters += haversineMeters(current, base);
-
-    const roadMeters = Math.round(totalMeters * ROAD_FACTOR);
-    const durationSeconds = Math.round((roadMeters / 1000 / AVERAGE_SPEED_KMH) * 3600);
-
-    return {
-        order,
-        distanceMeters: roadMeters,
-        durationSeconds,
-        polyline: null,
-        source: 'fallback',
-    };
-}
-
-export async function optimizeRoute(base: LatLng, stops: LatLng[]): Promise<RouteOptimization> {
+export async function optimizeRoute(origin: LatLng, stops: LatLng[]): Promise<RouteOptimization> {
     if (stops.length === 0) {
         return { order: [], distanceMeters: 0, durationSeconds: 0, polyline: null, source: 'fallback' };
     }
 
+    const estimated = estimateRoute(origin, stops);
     if (isGoogleRoutesEnabled() && stops.length <= MAX_WAYPOINTS) {
         try {
-            return await callGoogle(base, stops);
+            return await callGoogle(origin, stops, estimated.order);
         } catch (error) {
             console.error('[google-routes] Falló la optimización, uso línea recta:', error);
         }
     }
 
-    return fallback(base, stops);
+    return { ...estimated, polyline: null, source: 'fallback' };
 }

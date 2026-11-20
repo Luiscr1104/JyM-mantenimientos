@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { addDays, isValidDate, matchesPreferredDay } from '../src/lib/dates';
-import { haversineMeters, googleMapsRouteUrl } from '../src/lib/geo';
+import { estimateRoute, haversineMeters, googleMapsRouteUrl } from '../src/lib/geo';
 import { dateStringSchema, servicePlanInputSchema } from '../src/lib/validation';
 
 test('fechas civiles y validación de fechas imposibles', () => {
@@ -27,10 +27,19 @@ test('no se aceptan frecuencias incompatibles o repetidas', () => {
     assert.equal(servicePlanInputSchema.safeParse({ ...input, visitsPerWeek: 2 }).success, true);
 });
 
-test('la distancia estimada y el enlace completo incluyen la base de regreso', () => {
+test('la distancia estimada y el enlace terminan en la última visita', () => {
     const base = { lat: 10.4709, lng: -84.6453 };
     const stop = { lat: 10.5, lng: -84.7 };
-    assert.ok(haversineMeters(base, stop) > 0);
+    const expected = Math.round(haversineMeters(base, stop) * 1.35);
+    assert.equal(estimateRoute(base, [stop]).distanceMeters, expected);
     const url = googleMapsRouteUrl(base, [stop]);
-    assert.ok(url?.includes('destination=10.4709%2C-84.6453'));
+    assert.equal(new URL(url!).searchParams.get('destination'), '10.5,-84.7');
+    assert.equal(new URL(url!).searchParams.has('waypoints'), false);
+    const second = { lat: 10.52, lng: -84.71 };
+    const multi = googleMapsRouteUrl(base, [stop, second])!;
+    assert.equal(new URL(multi).searchParams.get('destination'), '10.52,-84.71');
+    assert.equal(new URL(multi).searchParams.get('waypoints'), '10.5,-84.7');
+    assert.deepEqual(estimateRoute(base, [stop, second]).order, [0, 1]);
+    assert.deepEqual(estimateRoute(second, [stop, base]).order, [0, 1]);
+    assert.equal(googleMapsRouteUrl(base, Array(11).fill(stop)), null);
 });

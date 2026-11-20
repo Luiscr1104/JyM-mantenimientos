@@ -26,10 +26,11 @@ const error = Astro.url.searchParams.get('error');
 const ok = Astro.url.searchParams.get('ok');
 const hasBase = settings.baseLat != null && settings.baseLng != null;
 
-const pendingVisits = dayVisits.filter(
-    (row) => row.visit.status === 'scheduled' || row.visit.status === 'in_progress',
-);
+const pendingVisits = dayVisits.filter((row) => row.visit.status === 'scheduled');
+const currentVisits = dayVisits.filter((row) => row.visit.status === 'in_progress');
+const isToday = date === getToday();
 const completedVisits = dayVisits.filter((row) => row.visit.status === 'completed');
+const startFromCurrentLocation = isToday && (!!plan || currentVisits.length > 0 || completedVisits.length > 0 || !hasBase);
 const byVisitId = new Map(pendingVisits.map((row) => [row.visit.id, row]));
 const planVisitIds = new Set((plan?.stops ?? []).map((stop) => stop.visitId));
 
@@ -39,6 +40,13 @@ const orderedFromPlan = (plan?.stops ?? [])
 
 const remaining = pendingVisits.filter((row) => !planVisitIds.has(row.visit.id));
 const ordered = [...orderedFromPlan, ...remaining];
+const routeIsCurrent = !!plan?.origin &&
+    plan.stops.every((stop) => byVisitId.has(stop.visitId)) &&
+    remaining.every((row) =>
+        row.property.lat == null || row.property.lng == null
+            ? row.visit.createdAt <= plan.optimizedAt
+            : false,
+    );
 
 const mapStops = ordered
     .filter((row) => row.property.lat != null && row.property.lng != null)
@@ -53,15 +61,16 @@ const base =
     hasBase && settings.baseLat != null && settings.baseLng != null
         ? { lat: settings.baseLat, lng: settings.baseLng }
         : null;
-const polyline = plan?.polyline
+const origin = plan?.origin ?? base;
+const polyline = routeIsCurrent && plan?.polyline && plan.origin
     ? decodePolyline(plan.polyline)
-    : plan && base
-      ? [[base.lat, base.lng], ...mapStops.map((stop) => [stop.lat, stop.lng]), [base.lat, base.lng]] as Array<[number, number]>
+    : origin
+      ? [[origin.lat, origin.lng], ...mapStops.map((stop) => [stop.lat, stop.lng])] as Array<[number, number]>
       : [];
 
-const mapsUrl = base && plan
+const mapsUrl = origin && routeIsCurrent
     ? googleMapsRouteUrl(
-          base,
+          origin,
           (plan?.stops ?? []).map((stop) => ({ lat: stop.lat, lng: stop.lng })),
       )
     : null;
@@ -80,8 +89,8 @@ const mapsUrl = base && plan
     <DateNav date={date} basePath="/panel/ruta" />
 
     <section class="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <h2 class="text-base font-extrabold text-slate-900">Agregar parada a la ruta</h2>
-        <p class="mt-1 text-xs text-slate-500">Selecciona una propiedad para este día. Si ya había una ruta calculada, podrás optimizarla otra vez.</p>
+        <h2 class="text-base font-extrabold text-slate-900">Agregar visita</h2>
+        <p class="mt-1 text-xs text-slate-500">Se agrega como parada para este día. Si ya había una ruta calculada, podrás optimizarla otra vez.</p>
         {properties.length === 0 ? (
             <a href="/panel/clientes/nuevo" class="panel-btn panel-btn-primary mt-3">
                 + Crear cliente y propiedad
@@ -110,7 +119,7 @@ const mapsUrl = base && plan
                         ))}
                     </select>
                 </div>
-                <button type="submit" class="panel-btn panel-btn-primary self-end">Agregar parada</button>
+                <button type="submit" class="panel-btn panel-btn-primary self-end">Agregar visita</button>
             </form>
         )}
     </section>
@@ -157,7 +166,7 @@ const mapsUrl = base && plan
             </div>
         ) : (
             <div class="space-y-4">
-                {pendingVisits.length === 0 && (
+                {pendingVisits.length === 0 && currentVisits.length === 0 && (
                     <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm font-semibold text-emerald-800">
                         Todas las visitas están completadas. No quedan paradas por recorrer.
                     </div>
@@ -166,40 +175,63 @@ const mapsUrl = base && plan
                     <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div class="min-w-0">
                             <p class="text-xs font-bold uppercase tracking-wide text-slate-400">
-                                {plan ? 'Ruta optimizada' : 'Sin optimizar'}
+                                {routeIsCurrent ? 'Ruta optimizada' : 'Sin optimizar'}
                             </p>
                             <p class="mt-1 text-xl font-extrabold text-slate-900 sm:text-2xl">
                                 {pendingVisits.length}{' '}
                                 {pendingVisits.length === 1 ? 'parada pendiente' : 'paradas pendientes'}
                             </p>
-                            {plan && (
+                            {routeIsCurrent && plan && (
                                 <p class="mt-1 text-sm font-semibold text-slate-500">
                                     {formatDistance(plan.distanceMeters)} · {formatDuration(plan.durationSeconds)}
                                 </p>
                             )}
-                            {plan?.source === 'fallback' && (
+                            {routeIsCurrent && plan && (
+                                <p class="mt-1 text-xs font-semibold text-slate-600">
+                                    Desde {plan.origin?.label ?? 'la base'} · termina en la última visita, sin regreso a casa.
+                                </p>
+                            )}
+                            {routeIsCurrent && plan?.source === 'fallback' && (
                                 <p class="mt-1 text-xs font-semibold text-amber-700">
                                     Orden y distancia estimados por cercanía. La línea del mapa no sigue carreteras.
                                 </p>
                             )}
-                            {plan && pendingVisits.length > plan.stops.length && (
+                            {routeIsCurrent && plan && pendingVisits.length > plan.stops.length && (
                                 <p class="mt-1 text-xs font-semibold text-amber-700">
                                     {pendingVisits.length - plan.stops.length} parada(s) sin ubicación no se incluyen
                                     en la distancia ni en la navegación completa.
                                 </p>
                             )}
+                            {plan && !routeIsCurrent && pendingVisits.length > 0 && (
+                                <p class="mt-1 text-xs font-semibold text-amber-700">
+                                    Recalcula para actualizar el recorrido desde el punto de partida elegido.
+                                </p>
+                            )}
                         </div>
 
                         <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
-                            {pendingVisits.length > 0 && <form method="POST" action="/api/panel/route/optimize" class="w-full sm:w-auto">
+                            {pendingVisits.length > 0 && <form method="POST" action="/api/panel/route/optimize" class="route-optimize-form w-full sm:w-auto">
                                 <input type="hidden" name="date" value={date} />
+                                <input type="hidden" name="lat" />
+                                <input type="hidden" name="lng" />
+                                {isToday && <label class="block text-xs font-bold text-slate-700">
+                                    Punto de partida
+                                    <select name="start" class="mt-1 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900">
+                                        <option value="gps" selected={startFromCurrentLocation}>Mi ubicación actual (teléfono)</option>
+                                        {currentVisits.filter((row) => row.property.lat != null && row.property.lng != null).map((row) => (
+                                            <option value={`property:${row.visit.id}`}>Esta propiedad: {row.property.alias}</option>
+                                        ))}
+                                        <option value="base" selected={!startFromCurrentLocation}>Base (casa de José)</option>
+                                    </select>
+                                </label>}
+                                {!isToday && <input type="hidden" name="start" value="base" />}
                                 <button
                                     type="submit"
-                                    disabled={!hasBase}
-                                    class:list={['panel-btn w-full sm:w-auto', plan ? 'panel-btn-secondary' : 'panel-btn-primary']}
+                                    class:list={['panel-btn mt-2 w-full sm:w-auto', plan ? 'panel-btn-secondary' : 'panel-btn-primary']}
                                 >
                                     {plan ? 'Recalcular ruta' : 'Optimizar ruta'}
                                 </button>
+                                <p role="alert" class="route-location-error mt-1 hidden text-xs font-semibold text-red-700"></p>
                             </form>}
 
                             {mapsUrl && (
@@ -215,7 +247,7 @@ const mapsUrl = base && plan
                         </div>
                     </div>
 
-                    {!hasBase && (
+                    {!hasBase && !isToday && (
                         <p class="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
                             Configura la ubicación base en{' '}
                             <a href="/panel/ajustes" class="underline">
@@ -226,6 +258,16 @@ const mapsUrl = base && plan
                     )}
                 </section>
 
+                {currentVisits.length > 0 && (
+                    <section class="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+                        <h2 class="font-extrabold text-sky-900">Visita en curso (no se repite en la ruta)</h2>
+                        {currentVisits.map((row) => (
+                            <a class="mt-2 block font-semibold text-sky-800 underline" href={`/panel/visitas/${row.visit.id}`}>
+                                {row.property.alias} · Continuar visita
+                            </a>
+                        ))}
+                    </section>
+                )}
                 {pendingVisits.length > 0 && <details class="route-map-panel min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                     <summary class="flex min-h-12 cursor-pointer items-center px-4 text-sm font-bold text-sky-800 lg:hidden">
                         Ver mapa de la ruta
@@ -234,9 +276,9 @@ const mapsUrl = base && plan
                         <RouteMap
                             client:only="react"
                             stops={mapStops}
-                            base={base}
+                            base={origin}
                             polyline={polyline}
-                            estimated={plan?.source === 'fallback'}
+                            estimated={!routeIsCurrent || plan?.source === 'fallback'}
                         />
                     </div>
                 </details>}
@@ -343,6 +385,43 @@ const mapsUrl = base && plan
         )
     }
 </PanelLayout>
+
+<script>
+    document.querySelectorAll<HTMLFormElement>('.route-optimize-form').forEach((form) => {
+        const select = form.querySelector<HTMLSelectElement>('select[name="start"]');
+        const latitude = form.querySelector<HTMLInputElement>('input[name="lat"]')!;
+        const longitude = form.querySelector<HTMLInputElement>('input[name="lng"]')!;
+        const message = form.querySelector<HTMLElement>('.route-location-error')!;
+        select?.addEventListener('change', () => {
+            latitude.value = '';
+            longitude.value = '';
+            message.classList.add('hidden');
+        });
+        form.addEventListener('submit', (event) => {
+            if (!select) return;
+            if (select.value !== 'gps' || (latitude.value && longitude.value)) return;
+            event.preventDefault();
+            if (!navigator.geolocation) {
+                message.textContent = 'Este dispositivo no ofrece ubicación. Elige la propiedad actual o la base.';
+                message.classList.remove('hidden');
+                return;
+            }
+            message.textContent = 'Obteniendo ubicación…';
+            message.classList.remove('hidden');
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    latitude.value = String(position.coords.latitude);
+                    longitude.value = String(position.coords.longitude);
+                    form.requestSubmit();
+                },
+                () => {
+                    message.textContent = 'No se pudo obtener tu ubicación. Permite el acceso o elige la propiedad actual o la base.';
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+            );
+        });
+    });
+</script>
 
 <style is:global>
     @media (min-width: 1024px) {

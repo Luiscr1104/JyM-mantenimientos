@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { isJsonRequest, json, readJsonOrForm } from '@/lib/http';
 import { dateStringSchema } from '@/lib/validation';
-import { optimizeDayRoute } from '@/server/routes';
+import { optimizeDayRoute, type RouteStart } from '@/server/routes';
 
 export const POST: APIRoute = async ({ request, locals }) => {
     if (!locals.user) return json({ error: 'No autorizado' }, 401);
@@ -12,7 +12,18 @@ export const POST: APIRoute = async ({ request, locals }) => {
     if (!date.success) return json({ error: 'Fecha inválida' }, 400);
 
     try {
-        const result = await optimizeDayRoute(date.data);
+        let start: RouteStart = { kind: 'base' };
+        if (body.start === 'gps') {
+            start = { kind: 'gps', lat: Number(body.lat), lng: Number(body.lng) };
+            if (body.lat === '' || body.lng === '' || body.lat == null || body.lng == null) {
+                throw new Error('Comparte tu ubicación para recalcular desde aquí.');
+            }
+        } else if (typeof body.start === 'string' && body.start.startsWith('property:')) {
+            start = { kind: 'property', visitId: body.start.slice('property:'.length) };
+        } else if (body.start != null && body.start !== 'base') {
+            throw new Error('Punto de partida inválido.');
+        }
+        const result = await optimizeDayRoute(date.data, start);
 
         return isJsonRequest(request)
             ? json({
