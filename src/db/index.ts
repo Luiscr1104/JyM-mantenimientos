@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { DATABASE_URL } from 'astro:env/server';
+import { DATABASE_URL, DIRECT_URL } from 'astro:env/server';
 import * as schema from './schema';
 
 type Db = ReturnType<typeof createDb>;
@@ -8,12 +8,15 @@ type Db = ReturnType<typeof createDb>;
 const globalForDb = globalThis as unknown as { __jymDb?: Db };
 
 function createDb() {
-    if (!DATABASE_URL) {
-        throw new Error('DATABASE_URL no está configurada. Revisa .env.local o las variables de Vercel.');
+    // El pool de transacciones (6543) puede cancelar consultas simples con 57014.
+    // El pool de sesión (5432) está configurado como DIRECT_URL en producción.
+    const connectionUrl = DIRECT_URL || DATABASE_URL;
+    if (!connectionUrl) {
+        throw new Error('No hay conexión a la base de datos configurada.');
     }
 
-    const client = postgres(DATABASE_URL, {
-        // Necesario con el transaction pooler de Supabase (puerto 6543).
+    const client = postgres(connectionUrl, {
+        // Compatible también con el transaction pooler si falta DIRECT_URL.
         prepare: false,
         ssl: 'require',
         // Cada función de Vercel crea su propio pool; evitar agotar el pooler

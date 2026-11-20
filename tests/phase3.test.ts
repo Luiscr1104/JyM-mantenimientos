@@ -66,15 +66,16 @@ test('el shell guarda páginas de visitas, no respuestas API, y avisa sobre cier
 });
 
 test('una caché llena no impide mostrar la página recibida por internet', async () => {
-    const handlers = new Map<string, (event: {
+    type TestFetchEvent = {
         request: { method: string; url: string; mode: string };
         respondWith: (response: Promise<Response>) => void;
         waitUntil: (job: Promise<unknown>) => void;
-    }) => void>();
+    };
+    const handlers = new Map<string, (event: TestFetchEvent) => void>();
     runInNewContext(readFileSync('public/sw.js', 'utf8'), {
         self: {
             location: { origin: 'https://jym-mantenimientos.vercel.app' },
-            addEventListener: (type: string, handler: (event: never) => void) => handlers.set(type, handler),
+            addEventListener: (type: string, handler: (event: TestFetchEvent) => void) => handlers.set(type, handler),
         },
         caches: {
             open: async () => ({ put: async () => { throw new Error('QuotaExceededError'); } }),
