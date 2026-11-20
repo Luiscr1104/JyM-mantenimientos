@@ -37,11 +37,19 @@ const command = `select net.http_get(
 const sql = postgres(url, { ssl: 'require', prepare: false, max: 1 });
 
 try {
-    await sql`create schema if not exists extensions`;
-    await sql`create extension if not exists pg_cron with schema pg_catalog`;
-    await sql`grant usage on schema cron to postgres`;
-    await sql`grant all privileges on all tables in schema cron to postgres`;
-    await sql`create extension if not exists pg_net with schema extensions`;
+    const installed = new Set((await sql`
+        select extname from pg_extension where extname in ('pg_cron', 'pg_net')
+    `).map((row) => row.extname));
+    if (!installed.has('pg_cron')) {
+        await sql`create extension pg_cron with schema pg_catalog`;
+        await sql`grant usage on schema cron to postgres`;
+        await sql`grant all privileges on all tables in schema cron to postgres`;
+    }
+    if (!installed.has('pg_net')) {
+        const [schema] = await sql`select to_regnamespace('extensions') as namespace`;
+        if (!schema.namespace) await sql`create schema extensions`;
+        await sql`create extension pg_net with schema extensions`;
+    }
 
     const stored = await sql`
         select decrypted_secret from vault.decrypted_secrets where name = ${secretName}
