@@ -16,7 +16,10 @@ function createDb() {
         // Necesario con el transaction pooler de Supabase (puerto 6543).
         prepare: false,
         ssl: 'require',
-        max: 5,
+        // Cada función de Vercel crea su propio pool; evitar agotar el pooler
+        // de Supabase cuando se preparan varias visitas a la vez.
+        max: 1,
+        connect_timeout: 10,
         idle_timeout: 20,
     });
 

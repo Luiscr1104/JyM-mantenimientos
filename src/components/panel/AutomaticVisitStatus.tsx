@@ -3,6 +3,17 @@ import { listLocal, refreshToday, syncAll } from '@/lib/automatic-visits';
 import { listEncrypted } from '@/lib/offline-storage';
 import { getToday } from '@/lib/dates';
 
+const REFRESH_INTERVAL = 5 * 60_000;
+const PREFETCH_INTERVAL = 15 * 60_000;
+
+function readStamp(key: string): number {
+    try { return Number(localStorage.getItem(key)) || 0; } catch { return 0; }
+}
+
+function writeStamp(key: string, value: number) {
+    try { localStorage.setItem(key, String(value)); } catch { /* El almacenamiento puede estar desactivado. */ }
+}
+
 export default function AutomaticVisitStatus({ userId }: { userId: string }) {
     const [pending, setPending] = React.useState(0);
     const [conflicts, setConflicts] = React.useState(0);
@@ -13,6 +24,12 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
     React.useEffect(() => {
         let active = true;
         let prepared = false;
+        let running = false;
+        let lastAttempt = 0;
+        let lastRefresh = 0;
+        let lastPrefetch = 0;
+        const refreshKey = `jym-auto-refresh-${userId}`;
+        const prefetchKey = `jym-auto-prefetch-${userId}`;
         async function update() {
             try {
                 const visits = await listLocal(userId);
@@ -24,40 +41,80 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
                 setLegacy((await listEncrypted()).some((entry) => entry.pending && entry.userId === userId));
             } catch { if (active) setError('El almacenamiento del teléfono no está disponible.'); }
         }
-        async function connected() {
+        async function connected(force = false) {
+            if (!userId || !navigator.onLine || document.hidden || running ||
+                (!force && Date.now() - lastAttempt < 60_000)) return;
+            running = true;
+            lastAttempt = Date.now();
             try {
-                await syncAll(userId);
-                const ids = await refreshToday(userId);
-                prepared = true;
-                if ('serviceWorker' in navigator) {
-                    const registration = await navigator.serviceWorker.ready;
-                    if (registration.active) {
-                        const channel = new MessageChannel();
-                        channel.port1.onmessage = (event) => {
-                            if (active && !event.data?.ok) {
-                                setError('Algunas páginas no quedaron disponibles sin internet. Abre Hoy con una conexión estable.');
-                            }
-                            channel.port1.close();
-                        };
-                        registration.active.postMessage({ type: 'prefetch-visits', ids, date: getToday() }, [channel.port2]);
+                const prepare = async () => {
+                    await syncAll(userId);
+                    if (!force && Date.now() - Math.max(lastRefresh, readStamp(refreshKey)) < REFRESH_INTERVAL) {
+                        prepared = true;
+                        if (active) setError('');
+                        return;
                     }
+                    const ids = await refreshToday(userId);
+                    prepared = true;
+                    lastRefresh = Date.now();
+                    writeStamp(refreshKey, lastRefresh);
+                    if (active) setError('');
+
+                    if (!('serviceWorker' in navigator)) return;
+                    // No esperar indefinidamente a un service worker que no pudo instalarse.
+                    const registration = await navigator.serviceWorker.getRegistration('/panel');
+                    if (!registration?.active) return;
+                    const snapshot = JSON.stringify({ date: getToday(), ids });
+                    const previous = (() => {
+                        try { return JSON.parse(localStorage.getItem(prefetchKey) ?? 'null') as {
+                            snapshot: string; at: number;
+                        } | null; } catch { return null; }
+                    })();
+                    if (previous?.snapshot === snapshot &&
+                        Date.now() - Math.max(lastPrefetch, previous.at) < PREFETCH_INTERVAL) return;
+                    const channel = new MessageChannel();
+                    channel.port1.onmessage = (event) => {
+                        if (event.data?.ok) {
+                            lastPrefetch = Date.now();
+                            try {
+                                localStorage.setItem(prefetchKey, JSON.stringify({ snapshot, at: lastPrefetch }));
+                            } catch { /* La caché del navegador sigue disponible. */ }
+                        } else if (active) {
+                            setError('Algunas páginas no quedaron disponibles sin internet. Abre Hoy con una conexión estable.');
+                        }
+                        channel.port1.close();
+                    };
+                    registration.active.postMessage({ type: 'prefetch-visits', ids, date: getToday() }, [channel.port2]);
+                };
+                if (navigator.locks) {
+                    await navigator.locks.request(`jym-auto-refresh-${userId}`, { ifAvailable: true },
+                        async (lock) => { if (lock) await prepare(); });
+                } else {
+                    await prepare();
                 }
-                if (active) setError('');
-            } catch { if (active) setError('No se pudo actualizar la copia local. Verifica la conexión y el espacio disponible.'); }
-            await update();
+            } catch (reason) {
+                console.warn('[offline.refresh]', reason);
+                if (active) setError(`No se pudo actualizar la copia local. ${
+                    reason instanceof Error ? reason.message : 'Verifica la conexión y el espacio disponible.'
+                }`);
+            } finally {
+                running = false;
+                await update();
+            }
         }
         void update();
         if (navigator.onLine) void connected();
-        const onOnline = () => { void connected(); };
+        const onOnline = () => { void connected(true); };
+        const onFocus = () => { void connected(); };
         const onChange = () => { void update(); };
         window.addEventListener('online', onOnline);
-        window.addEventListener('focus', onOnline);
+        window.addEventListener('focus', onFocus);
         window.addEventListener('jym-visits-changed', onChange);
-        const interval = window.setInterval(() => { if (navigator.onLine) void connected(); }, 60_000);
+        const interval = window.setInterval(() => { void connected(); }, 60_000);
         return () => {
             active = false;
             window.removeEventListener('online', onOnline);
-            window.removeEventListener('focus', onOnline);
+            window.removeEventListener('focus', onFocus);
             window.removeEventListener('jym-visits-changed', onChange);
             window.clearInterval(interval);
         };

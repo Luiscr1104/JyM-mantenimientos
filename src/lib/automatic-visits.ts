@@ -130,7 +130,7 @@ export async function syncAll(userId: string): Promise<void> {
 
 export async function refreshToday(userId: string): Promise<string[]> {
     const response = await fetch('/api/panel/offline/prepare', { cache: 'no-store' });
-    if (!response.ok) throw new Error('No se pudo actualizar la agenda local.');
+    if (!response.ok) throw new Error(`El servidor respondió ${response.status}. Las visitas locales siguen guardadas.`);
     const data = await response.json() as { userId: string; visits: OfflineVisit[] };
     if (data.userId !== userId || !Array.isArray(data.visits)) throw new Error('Sesión inesperada.');
     for (const previous of await listLocal(userId)) {
@@ -141,7 +141,13 @@ export async function refreshToday(userId: string): Promise<string[]> {
     for (const visit of data.visits) {
         await withVisitLock(userId, visit.id, async () => {
             const current = await getLocal(userId, visit.id);
-            if (!current?.pending && !current?.conflict && !current?.completedAt) {
+            if (!current?.pending && !current?.conflict && !current?.completedAt &&
+                (current?.expectedUpdatedAt !== visit.expectedUpdatedAt ||
+                    current?.propertyName !== visit.propertyName ||
+                    current?.address !== visit.address ||
+                    current?.gateCode !== visit.gateCode ||
+                    current?.accessNotes !== visit.accessNotes ||
+                    current?.pumpNotes !== visit.pumpNotes)) {
                 await putLocal({ ...visit, ownerId: userId });
             }
         });

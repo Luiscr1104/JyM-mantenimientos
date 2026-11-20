@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { offlineSyncSchema } from '../src/lib/offline-visit';
 import { syncBody, type LocalVisit } from '../src/lib/automatic-visits';
 import { emptyChecklist, getCompletionIssue } from '../src/lib/visit-work';
@@ -62,6 +63,36 @@ test('el shell guarda páginas de visitas, no respuestas API, y avisa sobre cier
     assert.match(readFileSync('src/components/panel/VisitWorkspace.tsx', 'utf8'), /pendiente de confirmar en el servidor/);
     assert.doesNotMatch(readFileSync('src/pages/panel/index.astro', 'utf8'), /OfflinePrep/);
     assert.match(readFileSync('src/components/panel/AutomaticVisitStatus.tsx', 'utf8'), /refreshToday\(userId\)/);
+});
+
+test('una caché llena no impide mostrar la página recibida por internet', async () => {
+    const handlers = new Map<string, (event: {
+        request: { method: string; url: string; mode: string };
+        respondWith: (response: Promise<Response>) => void;
+        waitUntil: (job: Promise<unknown>) => void;
+    }) => void>();
+    runInNewContext(readFileSync('public/sw.js', 'utf8'), {
+        self: {
+            location: { origin: 'https://jym-mantenimientos.vercel.app' },
+            addEventListener: (type: string, handler: (event: never) => void) => handlers.set(type, handler),
+        },
+        caches: {
+            open: async () => ({ put: async () => { throw new Error('QuotaExceededError'); } }),
+            match: async () => null,
+        },
+        fetch: async () => new Response('<h1>Hoy</h1>', { headers: { 'content-type': 'text/html' } }),
+        Response, URL, console: { warn: () => {} },
+    });
+    let received: Promise<Response> | undefined;
+    const jobs: Promise<unknown>[] = [];
+    handlers.get('fetch')!({
+        request: { method: 'GET', mode: 'navigate', url: 'https://jym-mantenimientos.vercel.app/panel' },
+        respondWith: (response) => { received = response; },
+        waitUntil: (job) => { jobs.push(job); },
+    });
+    assert.ok(received);
+    assert.equal(await (await received).text(), '<h1>Hoy</h1>');
+    await Promise.all(jobs);
 });
 
 test('el protocolo de salida se mantiene antes de sincronizar', () => {
