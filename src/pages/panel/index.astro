@@ -71,7 +71,7 @@ const stats = [
             </section>
         )}
         {openWaterTasks.length > 0 && (
-            <WaterFillWidget client:load initial={openWaterTasks.map(({ task, property }) => ({
+            <WaterFillWidget client:load compact initial={openWaterTasks.map(({ task, property }) => ({
                 id: task.id,
                 propertyId: property.id,
                 propertyName: property.alias,
