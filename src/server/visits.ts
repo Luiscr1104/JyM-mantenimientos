@@ -141,7 +141,7 @@ export async function deleteVisit(id: string) {
 
 export async function applyVisitAction(id: string, action: VisitAction, actorId?: string) {
     if (action === 'delete') {
-        await deleteVisit(id);
+        if (!(await deleteVisit(id))) throw new VisitWorkError('Visita no encontrada', 404);
         return null;
     }
     if (action === 'complete') return completeVisit(id, actorId);

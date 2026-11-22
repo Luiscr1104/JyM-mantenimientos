@@ -18,19 +18,21 @@ const [dayVisits, properties, suggestions] = await Promise.all([
 ]);
 
 const ok = Astro.url.searchParams.get('ok');
+const error = Astro.url.searchParams.get('error');
+const fromRoute = Astro.url.searchParams.get('from') === 'route';
 ---
 
 <PanelLayout title="Agenda">
-    <PageHeader title="Agenda" description="Programa, ajusta y cierra las visitas del día.">
+    <PageHeader title="Agenda" description="Agrega o quita visitas y planifica otros días.">
         <a
             href={`/panel/ruta?date=${date}`}
-            class="panel-btn panel-btn-secondary"
+            class:list={['panel-btn', fromRoute ? 'panel-btn-primary' : 'panel-btn-secondary']}
         >
-            Ver ruta
+            {fromRoute ? '← Volver a la ruta' : 'Ver ruta'}
         </a>
     </PageHeader>
 
-    <DateNav date={date} basePath="/panel/agenda" />
+    <DateNav date={date} basePath="/panel/agenda" fromRoute={fromRoute} />
 
     {
         ok === 'suggest' && (
@@ -39,10 +41,33 @@ const ok = Astro.url.searchParams.get('ok');
             </div>
         )
     }
+    {ok === 'visit-added' && (
+        <p role="status" class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+            Visita agregada. Puedes verla en Ruta.
+        </p>
+    )}
+    {ok === 'visit-exists' && (
+        <p role="status" class="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800">
+            Esa propiedad ya tiene una visita para este día.
+        </p>
+    )}
+    {ok === 'visit-removed' && (
+        <p role="status" class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+            Visita quitada del día.
+        </p>
+    )}
+    {error && (
+        <p role="alert" class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+            {error}
+        </p>
+    )}
 
-    <section class="mb-4 min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+    <section id="gestionar-visitas" class="mb-4 min-w-0 scroll-mt-20 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <h2 class="text-base font-extrabold text-slate-900">Agregar visita</h2>
-        <p class="mt-1 text-xs text-slate-500">Se agrega al final de la agenda del día.</p>
+        <p class="mt-1 text-xs text-slate-500">Se agrega al final de este día. Si ya tenías una ruta calculada, podrás optimizarla otra vez.</p>
+        <a href="#visitas-del-dia" class="mt-2 inline-flex min-h-10 items-center text-sm font-semibold text-sky-800 underline">
+            ¿Quieres quitar una visita? Ve a la lista ↓
+        </a>
 
         {
             properties.length === 0 ? (
@@ -53,6 +78,7 @@ const ok = Astro.url.searchParams.get('ok');
                 <form method="POST" action="/api/panel/visits"
                     class="mt-3 grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
                     <input type="hidden" name="scheduledFor" value={date} />
+                    {fromRoute && <input type="hidden" name="returnTo" value="route" />}
                     <div class="min-w-0">
                         <label for="propertyId" class="mb-1 block text-xs font-bold text-slate-700">
                             Propiedad
@@ -85,11 +111,14 @@ const ok = Astro.url.searchParams.get('ok');
     </section>
 
     <div class="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-5">
-        <section class="min-w-0 lg:col-span-3">
+        <section id="visitas-del-dia" class="min-w-0 scroll-mt-20 lg:col-span-3">
             <h2 class="mb-3 text-base font-extrabold text-slate-900">
-                Visitas
+                Visitas del día
                 <span class="ml-1 text-sm font-semibold text-slate-400">({dayVisits.length})</span>
             </h2>
+            <p class="mb-3 text-xs text-slate-600">
+                Quitar elimina una visita sin historial. Omitir conserva el registro cuando no se atenderá hoy.
+            </p>
 
             {
                 dayVisits.length === 0 ? (
@@ -144,40 +173,35 @@ const ok = Astro.url.searchParams.get('ok');
                                         )}
                                     </div>
                                 </div>
-                                <div class:list={[
-                                    'mt-2 grid gap-2',
-                                    row.property.lat != null && row.property.lng != null
-                                        ? 'grid-cols-2'
-                                        : 'grid-cols-1',
-                                ]}>
+                                <div class="mt-3 flex flex-wrap gap-2">
                                     <a href={`/panel/visitas/${row.visit.id}`}
-                                        class="panel-btn panel-btn-primary min-h-11 w-full px-2 text-xs sm:px-4 sm:text-sm">
-                                        {row.visit.status === 'scheduled' ? 'Iniciar visita' :
-                                            row.visit.status === 'in_progress' ? 'Continuar visita' : 'Ver registro'}
+                                        class="panel-btn panel-btn-secondary min-h-11">
+                                        Ver visita
                                     </a>
-                                    {row.property.lat != null &&
-                                        row.property.lng != null && (
-                                            <a
-                                                href={`https://www.google.com/maps/dir/?api=1&destination=${row.property.lat},${row.property.lng}&travelmode=driving`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                class="panel-btn panel-btn-secondary min-h-11 w-full px-2 text-xs sm:px-4 sm:text-sm"
-                                            >
-                                                Navegar
-                                            </a>
-                                        )}
+                                    {row.visit.status === 'scheduled' && !row.visit.checklist && (
+                                        <form method="POST" action={`/api/panel/visits/${row.visit.id}`}
+                                            data-confirm="¿Quitar esta visita del día? Esta acción elimina una visita sin historial.">
+                                            <input type="hidden" name="action" value="delete" />
+                                            <input type="hidden" name="date" value={date} />
+                                            {fromRoute && <input type="hidden" name="returnTo" value="route" />}
+                                            <button type="submit" class="panel-btn panel-btn-danger min-h-11">
+                                                Quitar visita
+                                            </button>
+                                        </form>
+                                    )}
                                 </div>
-                                <details>
+                                <details class="mt-1">
                                     <summary class="inline-flex min-h-11 cursor-pointer items-center text-sm font-semibold text-slate-700 underline">
-                                        Más opciones
+                                        Más acciones
                                     </summary>
                                     <div class="flex flex-wrap gap-2 pb-1">
                                         {row.visit.status === 'scheduled' ||
                                         row.visit.status === 'in_progress' ? (
-                                            <form method="POST" action={`/api/panel/visits/${row.visit.id}`}>
+                                            <form method="POST" action={`/api/panel/visits/${row.visit.id}`}
+                                                data-confirm="¿Omitir esta visita? El registro se conserva.">
                                                 <input type="hidden" name="action" value="skip" />
                                                 <button type="submit" class="panel-btn panel-btn-secondary">
-                                                    Omitir
+                                                    Omitir (conservar registro)
                                                 </button>
                                             </form>
                                         ) : (
@@ -185,15 +209,6 @@ const ok = Astro.url.searchParams.get('ok');
                                                 <input type="hidden" name="action" value="reopen" />
                                                 <button type="submit" class="panel-btn panel-btn-secondary">
                                                     Reabrir
-                                                </button>
-                                            </form>
-                                        )}
-                                        {row.visit.status === 'scheduled' && !row.visit.checklist && (
-                                            <form method="POST" action={`/api/panel/visits/${row.visit.id}`}
-                                                onsubmit="return confirm('¿Eliminar esta visita de la agenda?')">
-                                                <input type="hidden" name="action" value="delete" />
-                                                <button type="submit" class="panel-btn panel-btn-danger">
-                                                    Eliminar
                                                 </button>
                                             </form>
                                         )}
@@ -253,3 +268,11 @@ const ok = Astro.url.searchParams.get('ok');
             </section>
     </div>
 </PanelLayout>
+
+<script>
+    document.querySelectorAll<HTMLFormElement>('form[data-confirm]').forEach((form) => {
+        form.addEventListener('submit', (event) => {
+            if (!window.confirm(form.dataset.confirm ?? '¿Confirmar la acción?')) event.preventDefault();
+        });
+    });
+</script>

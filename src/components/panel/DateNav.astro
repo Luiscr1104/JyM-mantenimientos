@@ -4,9 +4,10 @@ import { addDays, formatLongDate, getToday } from '@/lib/dates';
 interface Props {
     date: string;
     basePath: string;
+    fromRoute?: boolean;
 }
 
-const { date, basePath } = Astro.props;
+const { date, basePath, fromRoute = false } = Astro.props;
 const previous = addDays(date, -1);
 const next = addDays(date, 1);
 const today = getToday();
@@ -17,7 +18,7 @@ const shortDate = new Intl.DateTimeFormat('es-CR', {
     month: 'short',
 }).format(new Date(`${date}T12:00:00Z`));
 
-const href = (value: string) => `${basePath}?date=${value}`;
+const href = (value: string) => `${basePath}?date=${value}${fromRoute ? '&from=route' : ''}`;
 ---
 
 <div

@@ -1,6 +1,6 @@
 ---
 import '@/styles/global.css';
-import { Home, Users, Inbox, Settings, LogOut, Route, CalendarDays } from 'lucide-react';
+import { Home, Users, Inbox, Settings, LogOut, Route, CalendarDays, ChartColumn } from 'lucide-react';
 import AutomaticVisitStatus from '@/components/panel/AutomaticVisitStatus';
 
 interface Props {
@@ -18,12 +18,13 @@ const items = [
     { href: '/panel', label: 'Hoy', icon: Home, exact: true },
     { href: '/panel/agenda', label: 'Agenda', icon: CalendarDays, exact: false },
     { href: '/panel/ruta', label: 'Ruta', icon: Route, exact: false },
+    { href: '/panel/reportes', label: 'Reportes', icon: ChartColumn, exact: false },
     { href: '/panel/clientes', label: 'Clientes', icon: Users, exact: false },
     { href: '/panel/leads', label: 'Leads', icon: Inbox, exact: false },
     { href: '/panel/ajustes', label: 'Ajustes', icon: Settings, exact: false },
 ];
 
-// En móvil dejamos los cinco accesos más usados; Leads sigue en el escritorio.
+// Leads queda en el escritorio; el reporte semanal también es accesible desde el teléfono.
 const mobileItems = items.filter((item) => item.href !== '/panel/leads');
 
 const isActive = (href: string, exact: boolean) =>
@@ -152,7 +153,7 @@ const isActive = (href: string, exact: boolean) =>
                     class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur lg:hidden"
                     style="padding-bottom: env(safe-area-inset-bottom)"
                 >
-                    <div class="grid grid-cols-5">
+                    <div class="grid grid-cols-6">
                         {
                             mobileItems.map((item) => {
                                 const Icon = item.icon;

@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { isJsonRequest, json, readJsonOrForm, redirectBack } from '@/lib/http';
-import { visitActionSchema, visitStatusSchema } from '@/lib/validation';
+import { dateStringSchema, visitActionSchema, visitStatusSchema } from '@/lib/validation';
 import { applyVisitAction, type VisitAction } from '@/server/visits';
 import { VisitWorkError } from '@/server/visit-work';
 
@@ -22,6 +22,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
 
     const body = await readJsonOrForm(request);
     const action = visitActionSchema.safeParse(body.action);
+    const date = dateStringSchema.safeParse(body.date);
 
     if (!action.success) return json({ error: 'Acción inválida' }, 400);
 
@@ -31,11 +32,24 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
 
         return isJsonRequest(request)
             ? json({ ok: true, visit })
-            : redirectBack(request, '/panel/agenda');
+            : action.data === 'delete' && date.success
+                ? new Response(null, {
+                    status: 303,
+                    headers: { Location: `/panel/${body.returnTo === 'route' ? 'ruta' : 'agenda'}?date=${date.data}&ok=visit-removed` },
+                })
+                : redirectBack(request, '/panel/agenda');
     } catch (error) {
         console.error('[visits.action]', error);
         if (error instanceof VisitWorkError) {
             if (isJsonRequest(request)) return json({ error: error.message }, error.status);
+            if (action.data === 'delete' && date.success) {
+                return new Response(null, {
+                    status: 303,
+                    headers: {
+                        Location: `/panel/agenda?date=${date.data}${body.returnTo === 'route' ? '&from=route' : ''}&error=${encodeURIComponent(error.message)}`,
+                    },
+                });
+            }
             return new Response(null, {
                 status: 303,
                 headers: {

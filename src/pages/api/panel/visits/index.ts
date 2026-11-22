@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { isJsonRequest, json, readJsonOrForm, redirectBack } from '@/lib/http';
+import { isJsonRequest, json, readJsonOrForm } from '@/lib/http';
 import { firstError, visitInputSchema } from '@/lib/validation';
 import { createVisit } from '@/server/visits';
 
@@ -18,12 +18,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
         return isJsonRequest(request)
             ? json({ ok: true, id, created })
-            : body.returnTo === 'route'
-                ? new Response(null, {
-                    status: 303,
-                    headers: { Location: `/panel/ruta?date=${parsed.data.scheduledFor}&ok=${created ? 'visit-added' : 'visit-exists'}` },
-                })
-                : redirectBack(request, `/panel/agenda?date=${parsed.data.scheduledFor}`);
+            : new Response(null, {
+                status: 303,
+                headers: {
+                    Location: `/panel/${body.returnTo === 'route' ? 'ruta' : 'agenda'}?date=${parsed.data.scheduledFor}&ok=${created ? 'visit-added' : 'visit-exists'}`,
+                },
+            });
     } catch (error) {
         console.error('[visits.create]', error);
         return json({ error: 'No se pudo programar la visita' }, 500);

@@ -1,0 +1,357 @@
+---
+import PanelLayout from '@/layouts/PanelLayout.astro';
+import PageHeader from '@/components/panel/PageHeader.astro';
+import { addDays, formatCompactDate, getToday, isValidDate } from '@/lib/dates';
+import { formatDateTime, formatDuration, visitStatusLabel, visitStatusStyle } from '@/lib/format';
+import { PRODUCTS, productInfo } from '@/lib/products';
+import { weekEnd, weekStart, summarizeWeeklyReport } from '@/lib/weekly-report';
+import { WORK_TYPES, workTypesLabel } from '@/lib/visit-types';
+import { getWeeklyReportData } from '@/server/reports';
+
+const today = getToday();
+const requestedDate = Astro.url.searchParams.get('date');
+const start = weekStart(isValidDate(requestedDate) ? requestedDate : today);
+const end = weekEnd(start);
+const { rows, products, followUps, waterTasks } = await getWeeklyReportData(start, end);
+const report = summarizeWeeklyReport(rows, products, waterTasks.map(({ task }) => task), today);
+const followUpBySource = new Map(followUps.map((visit) => [visit.followUpForVisitId, visit]));
+const flocculations = rows.filter(({ visit }) =>
+    visit.status === 'completed' && visit.workTypes.includes('flocculation'));
+const attention = report.clients.flatMap((group) => group.rows.filter(({ visit, incompleteTasks }) =>
+    visit.status === 'skipped' ||
+    ((visit.status === 'scheduled' || visit.status === 'in_progress') && visit.scheduledFor < today) ||
+    (visit.status === 'completed' && (incompleteTasks.length > 0 || Boolean(visit.pendingReason?.trim())))));
+const productEntries = PRODUCTS.filter(({ key }) => report.productTotals.has(key));
+const workEntries = WORK_TYPES.filter(({ key }) => report.workTypes.has(key));
+const shortDate = (value: string) => formatCompactDate(value);
+const periodLabel = `${shortDate(start)} ${start.slice(0, 4)} – ${shortDate(end)} ${end.slice(0, 4)}`;
+const quantity = (value: number) => value.toLocaleString('es-CR', { maximumFractionDigits: 2 });
+const completionPercent = report.counts.total
+    ? Math.round(report.counts.completed / report.counts.total * 100)
+    : 0;
+const otherStatuses = [
+    { label: 'Pendientes', value: report.counts.scheduled, style: 'border-slate-200 bg-white text-slate-700' },
+    { label: 'En curso', value: report.counts.inProgress, style: 'border-sky-200 bg-sky-50 text-sky-900' },
+    { label: 'Omitidas', value: report.counts.skipped, style: 'border-amber-200 bg-amber-50 text-amber-900' },
+    { label: 'Vencidas', value: report.counts.overdue, style: 'border-rose-200 bg-rose-50 text-rose-900' },
+].filter(({ value }) => value > 0);
+const reviewCount = (group: typeof report.clients[number]) => group.rows.filter(({ visit, incompleteTasks }) =>
+    visit.status === 'skipped' ||
+    ((visit.status === 'scheduled' || visit.status === 'in_progress') && visit.scheduledFor < today) ||
+    (visit.status === 'completed' && (incompleteTasks.length > 0 || Boolean(visit.pendingReason?.trim())))).length;
+---
+
+<PanelLayout title="Reporte semanal">
+    <PageHeader title="Reporte semanal interno" description="Trabajo registrado en las visitas de esta semana." />
+
+    <div class="report-controls mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <a href={`/panel/reportes?date=${addDays(start, -7)}`} aria-label="Semana anterior"
+            class="panel-btn panel-btn-secondary min-h-11">← Anterior</a>
+        <div class="text-center">
+            <h2 class="font-extrabold text-slate-900">{periodLabel}</h2>
+            <p class="text-xs text-slate-500">Semana de lunes a domingo · hora de Costa Rica</p>
+        </div>
+        <a href={`/panel/reportes?date=${addDays(start, 7)}`} aria-label="Semana siguiente"
+            class="panel-btn panel-btn-secondary min-h-11">Siguiente →</a>
+    </div>
+    <p class="report-print-period mb-4 font-semibold text-slate-700">{periodLabel}</p>
+    <div class="report-controls mb-6 flex flex-wrap items-end gap-3">
+        <form method="GET" action="/panel/reportes" class="flex items-end gap-2">
+            <label class="text-xs font-bold text-slate-700">
+                Ir a la semana de
+                <input type="date" name="date" value={start} required
+                    class="mt-1 block h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900" />
+            </label>
+            <button type="submit" class="panel-btn panel-btn-secondary min-h-11">Ver</button>
+        </form>
+        {start !== weekStart(today) && <a href="/panel/reportes" class="panel-btn panel-btn-secondary min-h-11">Semana actual</a>}
+        <button type="button" onclick="window.print()" class="panel-btn panel-btn-secondary min-h-11">Imprimir / guardar PDF</button>
+    </div>
+
+    <p class="mb-4 text-xs text-slate-500">
+        Las cifras se basan en visitas programadas para esta semana, no en cobros ni recorridos estimados.
+        Los cambios que aún no se han sincronizado desde un teléfono no aparecen aquí.
+    </p>
+
+    <section aria-label="Resumen de visitas" class="mb-5 grid gap-3 sm:grid-cols-3">
+        <div class="report-card relative overflow-hidden rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-white p-5 shadow-sm">
+            <span class="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-xl text-emerald-800" aria-hidden="true">✓</span>
+            <p class="pr-12 text-xs font-extrabold uppercase tracking-wider text-emerald-800">Visitas completadas</p>
+            <p class="mt-3 text-4xl font-extrabold tracking-tight text-slate-900">
+                {report.counts.completed}<span class="ml-1 text-xl font-bold text-slate-400">/ {report.counts.total}</span>
+            </p>
+            <div class="mt-3 h-2 overflow-hidden rounded-full bg-emerald-100"
+                role="progressbar" aria-label="Visitas completadas" aria-valuemin="0" aria-valuemax="100" aria-valuenow={completionPercent}>
+                <div class="h-full rounded-full bg-emerald-600" style={`width: ${completionPercent}%`}></div>
+            </div>
+            <p class="mt-2 text-sm text-slate-600">{completionPercent}% de las visitas de esta semana</p>
+        </div>
+        <div class="report-card relative overflow-hidden rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-white p-5 shadow-sm">
+            <span class="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-100 text-xl text-sky-800" aria-hidden="true">◷</span>
+            <p class="pr-12 text-xs font-extrabold uppercase tracking-wider text-sky-800">Tiempo en propiedades</p>
+            <p class="mt-3 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+                {report.timedVisits ? formatDuration(Math.round(report.totalMinutes * 60)) : '—'}
+            </p>
+            <p class="mt-2 text-sm text-slate-600">{report.timedVisits} visitas completadas con horas registradas</p>
+        </div>
+        <div class:list={[
+            'report-card relative overflow-hidden rounded-3xl border p-5 shadow-sm',
+            attention.length
+                ? 'border-amber-200 bg-gradient-to-br from-amber-50 via-white to-white'
+                : 'border-slate-200 bg-white',
+        ]}>
+            <span class:list={[
+                'absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-2xl text-xl',
+                attention.length ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500',
+            ]} aria-hidden="true">!</span>
+            <p class:list={['pr-12 text-xs font-extrabold uppercase tracking-wider', attention.length ? 'text-amber-800' : 'text-slate-600']}>Para revisar</p>
+            <p class="mt-3 text-4xl font-extrabold tracking-tight text-slate-900">{attention.length}</p>
+            <p class="mt-2 text-sm text-slate-600">Visitas omitidas, atrasadas o con tareas pendientes</p>
+        </div>
+    </section>
+
+    {otherStatuses.length > 0 && (
+        <section aria-label="Otros estados" class="mb-6 flex flex-wrap gap-2">
+            {otherStatuses.map(({ label, value, style }) => (
+                <span class:list={['inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold', style]}>
+                    {label} <strong class="text-sm">{value}</strong>
+                </span>
+            ))}
+        </section>
+    )}
+
+    {rows.length === 0 && waterTasks.length === 0 ? (
+        <div class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-600">
+            No hay visitas ni llenados registrados para esta semana. Elige otra semana para consultar el historial.
+        </div>
+    ) : (
+        <div class="space-y-6">
+            {attention.length > 0 && (
+                <section class="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 sm:p-5">
+                    <h2 class="font-extrabold text-amber-950">Atención de la semana</h2>
+                    <p class="mt-1 text-sm text-amber-900">Visitas que conviene revisar antes de cerrar la semana.</p>
+                    <ul class="mt-3 space-y-2 text-sm">
+                        {attention.slice(0, 3).map(({ visit, property, client, incompleteTasks }) => (
+                            <li>
+                                <a href={`/panel/visitas/${visit.id}`} class="font-semibold text-amber-950 underline">{property.alias} · {client.name}</a>
+                                <span class="text-amber-900"> · {shortDate(visit.scheduledFor)} · {
+                                    visit.status === 'skipped' ? 'Omitida' :
+                                    visit.status === 'completed' ? `${incompleteTasks.length} tarea(s) sin marcar${visit.pendingReason?.trim() ? ' · motivo registrado' : ''}` :
+                                    visit.status === 'in_progress' ? 'En curso desde un día anterior' : 'Pendiente vencida'
+                                }</span>
+                            </li>
+                        ))}
+                    </ul>
+                    {attention.length > 3 && (
+                        <details class="group mt-3 border-t border-amber-200 pt-2">
+                            <summary class="flex min-h-11 cursor-pointer items-center justify-between gap-2 text-sm font-bold text-amber-950">
+                                Ver {attention.length - 3} más <span class="report-chevron transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+                            </summary>
+                            <ul class="space-y-2 pb-1 text-sm">
+                                {attention.slice(3).map(({ visit, property, client, incompleteTasks }) => (
+                                    <li>
+                                        <a href={`/panel/visitas/${visit.id}`} class="font-semibold text-amber-950 underline">{property.alias} · {client.name}</a>
+                                        <span class="text-amber-900"> · {shortDate(visit.scheduledFor)} · {
+                                            visit.status === 'skipped' ? 'Omitida' :
+                                            visit.status === 'completed' ? `${incompleteTasks.length} tarea(s) sin marcar${visit.pendingReason?.trim() ? ' · motivo registrado' : ''}` :
+                                            visit.status === 'in_progress' ? 'En curso desde un día anterior' : 'Pendiente vencida'
+                                        }</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </details>
+                    )}
+                </section>
+            )}
+
+            <section class="grid items-start gap-4 lg:grid-cols-2">
+                <details class="group report-card rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <summary class="flex min-h-20 cursor-pointer items-center justify-between gap-3 rounded-2xl px-4 py-4 transition hover:bg-slate-50 sm:px-5">
+                        <span class="min-w-0">
+                            <span class="block font-extrabold text-slate-900">Trabajo registrado</span>
+                            <span class="mt-1 block text-sm text-slate-600">{workEntries.length} tipos de trabajo · {report.incompleteVisits} visitas con tareas pendientes</span>
+                        </span>
+                        <span class="report-chevron shrink-0 text-xl text-sky-700 transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+                    </summary>
+                    <div class="border-t border-slate-100 px-4 py-4 sm:px-5">
+                        {workEntries.length ? (
+                            <ul class="space-y-2 text-sm text-slate-700">
+                                {workEntries.map(({ key, label }) => (
+                                    <li class="flex justify-between gap-3"><span>{label}</span><strong>{report.workTypes.get(key)}</strong></li>
+                                ))}
+                            </ul>
+                        ) : <p class="text-sm text-slate-500">No hay trabajos completados esta semana.</p>}
+                        <p class="mt-3 text-xs text-slate-500">Una visita completada puede registrar varios tipos de trabajo.</p>
+                    </div>
+                </details>
+                <details class="group report-card rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <summary class="flex min-h-20 cursor-pointer items-center justify-between gap-3 rounded-2xl px-4 py-4 transition hover:bg-slate-50 sm:px-5">
+                        <span class="min-w-0">
+                            <span class="block font-extrabold text-slate-900">Productos registrados</span>
+                            <span class="mt-1 block text-sm text-slate-600">{productEntries.length} tipos de producto · cantidades por unidad</span>
+                        </span>
+                        <span class="report-chevron shrink-0 text-xl text-sky-700 transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+                    </summary>
+                    <div class="border-t border-slate-100 px-4 py-4 sm:px-5">
+                        {productEntries.length ? (
+                            <ul class="space-y-2 text-sm text-slate-700">
+                                {productEntries.map(({ key, label, unit }) => (
+                                    <li class="flex justify-between gap-3"><span>{label}</span><strong>{quantity(report.productTotals.get(key)!)} {unit}</strong></li>
+                                ))}
+                            </ul>
+                        ) : <p class="text-sm text-slate-500">No hay productos registrados en las visitas de esta semana.</p>}
+                        <p class="mt-3 text-xs text-slate-500">Cantidades registradas por visita; no equivalen a inventario ni a un cobro.</p>
+                    </div>
+                </details>
+            </section>
+
+            {(flocculations.length > 0 || waterTasks.length > 0) && (
+                <section class="grid items-start gap-4 lg:grid-cols-2">
+                    {flocculations.length > 0 && (
+                        <details class="group report-card rounded-2xl border border-slate-200 bg-white shadow-sm">
+                            <summary class="flex min-h-20 cursor-pointer items-center justify-between gap-3 rounded-2xl px-4 py-4 transition hover:bg-slate-50 sm:px-5">
+                                <span class="min-w-0">
+                                    <span class="block font-extrabold text-slate-900">Seguimientos de floculación</span>
+                                    <span class="mt-1 block text-sm text-slate-600">{flocculations.length} floculaciones completadas</span>
+                                </span>
+                                <span class="report-chevron shrink-0 text-xl text-sky-700 transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+                            </summary>
+                            <div class="border-t border-slate-100 px-4 py-4 sm:px-5">
+                                <ul class="space-y-2 text-sm">
+                                    {flocculations.map(({ visit, property }) => {
+                                        const followUp = followUpBySource.get(visit.id);
+                                        return <li>
+                                            <a href={`/panel/visitas/${visit.id}`} class="font-semibold text-sky-800 underline">{property.alias}</a>
+                                            <span class="text-slate-600"> · {followUp
+                                                ? `${shortDate(followUp.scheduledFor)} · ${visitStatusLabel(followUp.status)}`
+                                                : 'Sin seguimiento registrado'}</span>
+                                        </li>;
+                                    })}
+                                </ul>
+                            </div>
+                        </details>
+                    )}
+                    {waterTasks.length > 0 && (
+                        <details class="group report-card rounded-2xl border border-slate-200 bg-white shadow-sm">
+                            <summary class="flex min-h-20 cursor-pointer items-center justify-between gap-3 rounded-2xl px-4 py-4 transition hover:bg-slate-50 sm:px-5">
+                                <span class="min-w-0">
+                                    <span class="block font-extrabold text-slate-900">Llenados iniciados</span>
+                                    <span class="mt-1 block text-sm text-slate-600">{report.water.total} iniciados · {report.water.open} sin cierre registrado</span>
+                                </span>
+                                <span class="report-chevron shrink-0 text-xl text-sky-700 transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+                            </summary>
+                            <div class="border-t border-slate-100 px-4 py-4 sm:px-5">
+                                <ul class="space-y-2 text-sm">
+                                    {waterTasks.map(({ task, property }) => (
+                                        <li>
+                                            <a href={`/panel/propiedades/${property.id}`} class="font-semibold text-sky-800 underline">{property.alias}</a>
+                                            <span class="text-slate-600"> · {formatDateTime(task.createdAt)} · </span>
+                                            <strong class={task.closedAt ? 'text-emerald-800' : 'text-amber-800'}>
+                                                {task.closedAt ? `Cerrado ${formatDateTime(task.closedAt)}` : 'Sin cierre registrado'}
+                                            </strong>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </details>
+                    )}
+                </section>
+            )}
+
+            {report.clients.length > 0 && <section>
+                <h2 class="mb-3 text-lg font-extrabold text-slate-900">Detalle por cliente y propiedad</h2>
+                <p class="mb-3 text-sm text-slate-600">Abre un cliente para ver sus visitas; entra en la visita para consultar pasos, notas y productos.</p>
+                <div class="space-y-3">
+                    {report.clients.map((group) => (
+                        <details class="group report-card rounded-2xl border border-slate-200 bg-white shadow-sm">
+                            <summary class="flex min-h-20 cursor-pointer items-center justify-between gap-3 rounded-2xl px-4 py-4 transition hover:bg-slate-50 sm:px-5">
+                                <span class="min-w-0">
+                                    <span class="block truncate text-base font-extrabold text-slate-900">{group.name}</span>
+                                    <span class="mt-1 block text-sm text-slate-600">
+                                        {group.completed}/{group.rows.length} completadas
+                                        {reviewCount(group) > 0 && <span class="ml-2 font-bold text-amber-800">· {reviewCount(group)} para revisar</span>}
+                                    </span>
+                                </span>
+                                <span class="report-chevron shrink-0 text-xl text-sky-700 transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+                            </summary>
+                            <ul class="divide-y divide-slate-100 border-t border-slate-100 px-4 sm:px-5">
+                                {group.rows.map(({ visit, property, products: visitProducts, completedTasks, incompleteTasks, minutes }) => (
+                                    <li class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3">
+                                        <div class="min-w-0">
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <a href={`/panel/visitas/${visit.id}`} class="font-bold text-sky-800 underline underline-offset-2">{property.alias}</a>
+                                                <span class="text-xs text-slate-500">{shortDate(visit.scheduledFor)}</span>
+                                                <span class:list={['rounded-full border px-2 py-0.5 text-xs font-semibold', visitStatusStyle(visit.status)]}>
+                                                    {visitStatusLabel(visit.status)}
+                                                </span>
+                                            </div>
+                                            {(visit.status === 'completed' || visit.status === 'in_progress') && (
+                                                <p class="mt-1 text-xs text-slate-600">{workTypesLabel(visit.workTypes)}
+                                                    {minutes !== null && ` · ${formatDuration(Math.round(minutes * 60))}`}
+                                                </p>
+                                            )}
+                                            {(incompleteTasks.length > 0 || visit.pendingReason?.trim()) && visit.status === 'completed' && (
+                                                <p class="mt-1 text-xs font-semibold text-amber-800">Trabajo pendiente · ver visita</p>
+                                            )}
+                                            <div class="report-print-detail mt-2 space-y-1 text-xs text-slate-700">
+                                                {visit.startedAt && <p>Llegada: {formatDateTime(visit.startedAt)}</p>}
+                                                {(visit.leftAt || visit.completedAt) && <p>Salida: {formatDateTime(visit.leftAt ?? visit.completedAt!)}</p>}
+                                                {completedTasks.length > 0 && <p>Pasos marcados: {completedTasks.join(', ')}</p>}
+                                                {incompleteTasks.length > 0 && <p>Sin marcar: {incompleteTasks.join(', ')}</p>}
+                                                {visit.pendingReason && <p class="whitespace-pre-line">Pendiente: {visit.pendingReason}</p>}
+                                                {visit.notes && <p class="whitespace-pre-line">Notas: {visit.notes}</p>}
+                                                {visitProducts.length > 0 && <p>
+                                                    Productos: {visitProducts.map((product) =>
+                                                        `${productInfo(product.product).label} ${quantity(Number(product.quantity))} ${productInfo(product.product).unit}`).join(' · ')}
+                                                </p>}
+                                            </div>
+                                        </div>
+                                        <a href={`/panel/visitas/${visit.id}`} class="inline-flex min-h-10 items-center text-xs font-bold text-sky-800 hover:underline">
+                                            Ver registro →
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                        </details>
+                    ))}
+                </div>
+            </section>}
+        </div>
+    )}
+</PanelLayout>
+
+<style is:global>
+    @media print {
+        body { background: white !important; }
+        body aside, body header, body nav, .report-controls { display: none !important; }
+        main { padding: 0 !important; }
+        li { break-inside: avoid; }
+        .report-print-period { display: block !important; }
+        .report-print-detail { display: block !important; }
+        details:not([open]) > :not(summary) { display: block !important; }
+    }
+    @media screen {
+        .report-print-period, .report-print-detail { display: none; }
+    }
+</style>
+
+<script>
+    // La impresión muestra todos los acordeones sin modificar la vista elegida por el usuario.
+    let previouslyOpen: HTMLDetailsElement[] = [];
+    let printing = false;
+    window.addEventListener('beforeprint', () => {
+        if (printing) return;
+        printing = true;
+        const details = [...document.querySelectorAll<HTMLDetailsElement>('main details')];
+        previouslyOpen = details.filter((item) => item.open);
+        details.forEach((item) => { item.open = true; });
+    });
+    window.addEventListener('afterprint', () => {
+        if (!printing) return;
+        document.querySelectorAll<HTMLDetailsElement>('main details').forEach((item) => {
+            item.open = previouslyOpen.includes(item);
+        });
+        previouslyOpen = [];
+        printing = false;
+    });
+</script>
