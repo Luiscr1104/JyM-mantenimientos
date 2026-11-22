@@ -8,8 +8,7 @@ export default function Footer() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-12 text-center md:text-left">
                     <div>
                         <div className="flex items-center justify-center md:justify-start gap-2 mb-4">
-                            <img src="/logoJyM.png" alt="JyM Logo" className="h-12 w-12 object-contain" />
-                            <span className="text-xl font-bold">JyM mantenimientos</span>
+                            <img src="/brand-logo.png" alt="JyM Mantenimientos" className="h-16 w-36 object-contain" />
                         </div>
                         <p className="text-sm text-muted-foreground">
                             Mantenimiento profesional de piscinas. Calidad, confianza y profesionalismo en cada visita.

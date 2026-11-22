@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, pushSubscriptions } from '@/db';
 import { json } from '@/lib/http';
+import { mayReceiveNotifications } from '@/lib/notification-policy';
 import { getNotificationUserId, pushConfigured } from '@/server/push-reminders';
 
 const schema = z.object({
@@ -11,8 +12,9 @@ const schema = z.object({
 });
 
 export const POST: APIRoute = async ({ locals, request }) => {
-    if (!locals.user || locals.user.id !== await getNotificationUserId()) {
-        return json({ error: 'Solo la cuenta de José puede activar avisos.' }, 403);
+    if (!locals.user || !locals.profile ||
+        !mayReceiveNotifications(locals.user.id, locals.profile.role, await getNotificationUserId())) {
+        return json({ error: 'Esta cuenta no está autorizada para recibir avisos.' }, 403);
     }
     if (!pushConfigured()) return json({ error: 'Falta configurar las claves de notificación.' }, 503);
     const parsed = schema.safeParse(await request.json().catch(() => null));

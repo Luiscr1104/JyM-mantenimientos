@@ -154,9 +154,19 @@ scripts/                 seeds de dueño y datos demo
    `jymmantenimientos.com` aún no resuelve. Para migrar el programador al
    dominio definitivo, actualizar `REMINDER_CRON_URL` y revisar el trabajo antes
    de activarlo: el script no sobrescribe un trabajo existente distinto.
-3. En **Ajustes**, el dueño selecciona la cuenta de José; José instala la PWA desde
-   su navegador y activa los avisos desde su cuenta. En iPhone, primero debe añadir
-   la PWA a la pantalla de inicio. Probar envío y permisos en el teléfono real.
+3. Antes de desplegar los avisos para varios teléfonos, ejecutar `npm run db:migrate`
+   para crear el registro de entrega por dispositivo. En la configuración actual
+   **Luis y José tienen rol de dueño**: cada uno entra a **Ajustes** desde su
+   propia cuenta y activa los avisos en su propio iPhone, sin seleccionar un
+   destinatario excluyente. Si en el futuro José usa el rol técnico, el dueño
+   selecciona esa cuenta en Ajustes. Seleccionar otra cuenta técnica no borra
+   los dispositivos de los dueños. En iPhone, primero añadir la PWA a la pantalla de inicio.
+   Pulsar «Enviar prueba a este teléfono» en ambos dispositivos y confirmar
+   personalmente que aparezca cada notificación. El servidor solo puede verificar
+   que el servicio push la aceptó; no que el sistema operativo la mostró.
+   Después probar una llave con plazo corto y una bomba con tiempo vencido:
+   ambos teléfonos deben recibir una vez cada aviso. Si solo uno falla, el
+   reintento no debe duplicarse en el otro. Desactivar uno no afecta al otro.
 4. Abrir **Hoy** con internet y, si hay visitas programadas para hoy, esperar
    el aviso **«Jornada lista sin internet»**: la PWA comprueba Hoy, Ruta,
    todas las visitas del día y sus recursos en ese

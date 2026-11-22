@@ -205,6 +205,23 @@ export const reminderDeliveries = pgTable('reminder_deliveries', {
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex('reminder_deliveries_unique').on(table.kind, table.targetId, table.dueAt)]);
 
+// Una aceptación por servicio push y dispositivo: un fallo en otro teléfono
+// no vuelve a enviar el mismo recordatorio a quien ya lo recibió.
+export const reminderDeviceDeliveries = pgTable('reminder_device_deliveries', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').$type<'water' | 'pump'>().notNull(),
+    targetId: uuid('target_id').notNull(),
+    dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+    subscriptionId: uuid('subscription_id').notNull(),
+    status: text('status').$type<'sending' | 'accepted' | 'retry' | 'invalid'>().notNull(),
+    attempts: integer('attempts').notNull().default(1),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    uniqueIndex('reminder_device_deliveries_unique')
+        .on(table.kind, table.targetId, table.dueAt, table.subscriptionId),
+]);
+
 export const offlineVisitSyncs = pgTable('offline_visit_syncs', {
     id: uuid('id').primaryKey(),
     visitId: uuid('visit_id').notNull().references(() => visits.id, { onDelete: 'cascade' }),

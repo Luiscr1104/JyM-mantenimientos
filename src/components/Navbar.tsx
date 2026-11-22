@@ -19,8 +19,10 @@ export default function Navbar() {
             <div className="container mx-auto px-4 md:px-8 lg:px-12 flex h-20 items-center justify-center relative">
                 {/* Left: Logo - Absolute positioned */}
                 <a href="/" className="absolute left-4 md:left-8 lg:left-12 flex items-center gap-2 hover:opacity-80 transition-opacity">
-                    <img src="/logoJyM.png" alt="JyM Logo" className="h-12 w-12 md:h-16 md:w-16 object-contain" />
-                    <span className="text-lg md:text-xl font-bold tracking-tight whitespace-nowrap">JyM mantenimientos</span>
+                    <img src="/brand-mark.png" alt="JyM Mantenimientos"
+                        className="h-11 w-24 object-contain lg:hidden" />
+                    <img src="/brand-logo.png" alt="JyM Mantenimientos"
+                        className="hidden h-16 w-36 object-contain lg:block" />
                 </a>
 
                 {/* Center: Desktop Navigation - Centered */}

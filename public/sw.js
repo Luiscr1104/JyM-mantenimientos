@@ -1,6 +1,6 @@
 // Para abrir visitas sin internet se guardan únicamente páginas del panel autenticado
 // y recursos estáticos; las respuestas de API y credenciales nunca se cachean.
-const CACHE = 'jym-panel-static-v3';
+const CACHE = 'jym-panel-static-v4';
 const PAGES = 'jym-panel-pages-v3';
 const READY = '/panel/offline-ready';
 const NAVIGATION_WAIT = 2500;
@@ -14,7 +14,7 @@ function today() {
 let privateEpoch = 0;
 let prefetchJob = null;
 let prefetchSnapshot = null;
-const STATIC = ['/logoJyM.png'];
+const STATIC = ['/brand-icon-192.png', '/brand-icon-512.png', '/brand-badge.png'];
 
 self.addEventListener('install', (event) => {
     event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(STATIC)));
@@ -219,8 +219,8 @@ self.addEventListener('push', (event) => {
         ? data.path : '/panel';
     event.waitUntil(self.registration.showNotification(data.title || 'Recordatorio JyM', {
         body: data.body || 'Revisa el panel.',
-        icon: '/logoJyM.png',
-        badge: '/logoJyM.png',
+        icon: '/brand-icon-192.png',
+        badge: '/brand-badge.png',
         tag: data.tag || undefined,
         data: { path },
     }));

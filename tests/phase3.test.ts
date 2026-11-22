@@ -284,7 +284,7 @@ test('la jornada solo figura lista si existen Hoy, Ruta, visitas y recursos', as
     assert.equal((await send('offline-status', [])).ready, false);
     assert.equal((await send('prefetch-visits', [])).ok, true);
     assert.equal((await send('offline-status', [])).ready, true);
-    stores.get('jym-panel-static-v3')!.delete('/_astro/campo.js');
+    stores.get('jym-panel-static-v4')!.delete('/_astro/campo.js');
     assert.equal((await send('offline-status', [])).ready, false);
 });
 
@@ -302,7 +302,7 @@ test('el manifiesto de la PWA instalada abre el panel', () => {
     const manifest = JSON.parse(readFileSync('public/manifest.webmanifest', 'utf8'));
     assert.equal(manifest.start_url, '/panel');
     assert.equal(manifest.display, 'standalone');
-    assert.ok(manifest.icons.some((icon: { src: string }) => icon.src === '/logoJyM.png'));
+    assert.ok(manifest.icons.some((icon: { src: string }) => icon.src === '/brand-icon-192.png'));
 });
 
 test('las tablas nuevas y el historial de eventos mantienen RLS', () => {
