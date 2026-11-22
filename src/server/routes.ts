@@ -1,8 +1,9 @@
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { db, routePlans, visits, type RoutePlan, type RouteStop } from '@/db';
 import type { RouteOrigin } from '@/db/schema';
 import { getToday } from '@/lib/dates';
 import { optimizeRoute } from '@/lib/google-routes';
+import { movePendingVisit, orderPendingVisits, type RouteMove } from '@/lib/route-order';
 import { getSettings } from './settings';
 import { listVisitsByDate, type VisitWithProperty } from './visits';
 
@@ -18,6 +19,52 @@ export async function getRoutePlan(date: string): Promise<RoutePlan | null> {
 
 export async function clearRoutePlan(date: string) {
     await db.delete(routePlans).where(eq(routePlans.visitDate, date));
+}
+
+export async function reorderDayRoute(date: string, visitId: string, move: RouteMove): Promise<boolean> {
+    return db.transaction(async (tx) => {
+        const dayVisits = await tx.select().from(visits)
+            .where(eq(visits.scheduledFor, date))
+            .orderBy(asc(visits.orderIndex), asc(visits.createdAt), asc(visits.id))
+            .for('update');
+        const [plan] = await tx.select().from(routePlans)
+            .where(eq(routePlans.visitDate, date)).for('update');
+        const pending = dayVisits.filter((visit) => visit.status === 'scheduled')
+            .map((visit) => ({ visit }));
+        const ordered = orderPendingVisits(pending, plan?.stops);
+        const moved = movePendingVisit(ordered, visitId, move);
+        if (!moved) return false;
+
+        // Conservar las visitas no pendientes en sus posiciones relativas.
+        const pendingInNewOrder = [...moved];
+        const all = dayVisits.map((visit) =>
+            visit.status === 'scheduled' ? pendingInNewOrder.shift()!.visit : visit,
+        );
+        const now = new Date();
+        for (let index = 0; index < all.length; index += 1) {
+            if (all[index].orderIndex === index) continue;
+            // El orden no cambia el trabajo de la visita ni invalida una visita preparada offline.
+            await tx.update(visits).set({ orderIndex: index })
+                .where(eq(visits.id, all[index].id));
+        }
+
+        if (plan) {
+            const stopsByVisitId = new Map(plan.stops.map((stop) => [stop.visitId, stop]));
+            const stops = moved.flatMap(({ visit }) => {
+                const stop = stopsByVisitId.get(visit.id);
+                return stop ? [stop] : [];
+            }).map((stop, index) => ({ ...stop, order: index }));
+            await tx.update(routePlans).set({
+                stops,
+                source: 'manual',
+                distanceMeters: null,
+                durationSeconds: null,
+                polyline: null,
+                updatedAt: now,
+            }).where(eq(routePlans.id, plan.id));
+        }
+        return true;
+    });
 }
 
 export interface OptimizedDay {
