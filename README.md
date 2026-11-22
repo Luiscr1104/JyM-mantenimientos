@@ -157,10 +157,13 @@ scripts/                 seeds de dueño y datos demo
 3. En **Ajustes**, el dueño selecciona la cuenta de José; José instala la PWA desde
    su navegador y activa los avisos desde su cuenta. En iPhone, primero debe añadir
    la PWA a la pantalla de inicio. Probar envío y permisos en el teléfono real.
-4. Abrir **Hoy** con internet y esperar el aviso **«Jornada lista sin internet»**:
-   la PWA comprueba Hoy, Ruta, todas las visitas del día y sus recursos en ese
+4. Abrir **Hoy** con internet y, si hay visitas programadas para hoy, esperar
+   el aviso **«Jornada lista sin internet»**: la PWA comprueba Hoy, Ruta,
+   todas las visitas del día y sus recursos en ese
    teléfono. Si aparece «Preparando» o faltan visitas, **no asumir que está lista**:
-   mantener la app abierta y recuperar una conexión estable. Con señal débil, una
+   mantener la app abierta y recuperar una conexión estable. Si no hay visitas
+   hoy, aparece «No hay visitas programadas para hoy»; las de fechas futuras
+   se preparan al llegar su día. Con señal débil, una
    página ya preparada se abre desde el teléfono si la red tarda más de unos segundos.
    Una visita nunca preparada en el teléfono no se puede abrir sin red.
    La copia local (incluidos códigos de acceso) **no está cifrada con un PIN**:

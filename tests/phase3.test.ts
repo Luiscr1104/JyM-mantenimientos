@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { offlineSyncSchema } from '../src/lib/offline-visit';
-import { syncBody, type LocalVisit } from '../src/lib/automatic-visits';
+import { isObsoleteLocalVisit, syncBody, todayVisitIds, type LocalVisit } from '../src/lib/automatic-visits';
 import { emptyChecklist, getCompletionIssue } from '../src/lib/visit-work';
 
 const valid = () => ({
@@ -53,6 +53,25 @@ test('la cola incluye el identificador estable, cambios y productos eliminados',
     assert.deepEqual(body.existingProducts, source.products);
     assert.deepEqual(body.products, source.addedProducts);
     assert.equal(body.syncId, source.syncId);
+});
+
+test('un día sin visitas vigentes descarta solo copias locales sin trabajo pendiente', () => {
+    const source = {
+        ...valid(), id: valid().visitId, ownerId: 'user-1', propertyName: 'Prueba',
+        address: '', gateCode: null, accessNotes: null, pumpNotes: null,
+        date: '2026-11-22', status: 'scheduled', pending: false, completedAt: null,
+        products: [], addedProducts: [], removedProducts: [],
+    } as LocalVisit;
+    const date = '2026-11-22';
+    assert.equal(isObsoleteLocalVisit(source, date, new Set()), true);
+    assert.equal(isObsoleteLocalVisit(source, date, new Set([source.id])), false);
+    assert.equal(isObsoleteLocalVisit(source, '2026-11-23', new Set()), false);
+    assert.equal(isObsoleteLocalVisit({ ...source, pending: true }, date, new Set()), false);
+    assert.equal(isObsoleteLocalVisit({ ...source, conflict: 'Revisar' }, date, new Set()), false);
+    assert.equal(isObsoleteLocalVisit({ ...source, completedAt: '2026-11-22T13:00:00Z' }, date, new Set()), false);
+    assert.deepEqual(todayVisitIds([source], date, null), [source.id]);
+    assert.deepEqual(todayVisitIds([source], date, []), []);
+    assert.deepEqual(todayVisitIds([source], date, ['otra-visita']), ['otra-visita']);
 });
 
 test('el shell guarda páginas de visitas, no respuestas API, y avisa sobre cierre pendiente', () => {
@@ -245,12 +264,12 @@ test('la jornada solo figura lista si existen Hoy, Ruta, visitas y recursos', as
         Response, URL, AbortSignal, console: { warn: () => {} },
     });
     const id = 'a8aff1e6-7759-494c-9423-6a6a3fbd2e26';
-    const send = async (type: string) => {
+    const send = async (type: string, ids = [id]) => {
         let reply!: (value: any) => void;
         const result = new Promise<any>((resolve) => { reply = resolve; });
         const jobs: Promise<unknown>[] = [];
         handlers.get('message')!({
-            data: { type, ids: [id], date: '2026-11-22' },
+            data: { type, ids, date: '2026-11-22' },
             ports: [{ postMessage: reply }],
             waitUntil: (job) => { jobs.push(job); },
         });
@@ -262,8 +281,11 @@ test('la jornada solo figura lista si existen Hoy, Ruta, visitas y recursos', as
     assert.equal((await send('prefetch-visits')).ok, true);
     assert.deepEqual(Array.from((await send('offline-status')).available), [id]);
     assert.equal((await send('offline-status')).ready, true);
+    assert.equal((await send('offline-status', [])).ready, false);
+    assert.equal((await send('prefetch-visits', [])).ok, true);
+    assert.equal((await send('offline-status', [])).ready, true);
     stores.get('jym-panel-static-v3')!.delete('/_astro/campo.js');
-    assert.equal((await send('offline-status')).ready, false);
+    assert.equal((await send('offline-status', [])).ready, false);
 });
 
 test('el protocolo de salida se mantiene antes de sincronizar', () => {

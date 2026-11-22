@@ -130,6 +130,7 @@ self.addEventListener('message', (event) => {
                 }) : false;
             event.ports[0]?.postMessage({
                 available, pages, ready: pages && assets && ready?.date === date &&
+                    ready.ids.length === ids.length &&
                     ids.every((id) => available.includes(id) && ready.ids.includes(id)),
             });
         })().catch(() => event.ports[0]?.postMessage({ available: [], pages: false, ready: false })));

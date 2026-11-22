@@ -129,6 +129,16 @@ export async function syncAll(userId: string): Promise<void> {
     }
 }
 
+export function isObsoleteLocalVisit(visit: LocalVisit, date: string, currentIds: ReadonlySet<string>): boolean {
+    return visit.date === date && !currentIds.has(visit.id) &&
+        !visit.pending && !visit.conflict && !visit.completedAt;
+}
+
+export function todayVisitIds(visits: LocalVisit[], date: string, verifiedIds: string[] | null): string[] {
+    return verifiedIds ?? visits.filter((visit) => visit.date === date && !visit.completedAt)
+        .map((visit) => visit.id);
+}
+
 export async function refreshToday(userId: string): Promise<string[]> {
     const response = await fetch('/api/panel/offline/prepare', {
         cache: 'no-store', signal: AbortSignal.timeout(12_000),
@@ -136,10 +146,18 @@ export async function refreshToday(userId: string): Promise<string[]> {
     if (!response.ok) throw new Error(`El servidor respondió ${response.status}. Las visitas locales siguen guardadas.`);
     const data = await response.json() as { userId: string; visits: OfflineVisit[] };
     if (data.userId !== userId || !Array.isArray(data.visits)) throw new Error('Sesión inesperada.');
+    const date = getToday();
+    const currentIds = new Set(data.visits.map((visit) => visit.id));
     for (const previous of await listLocal(userId)) {
-        if (previous.completedAt && !previous.pending && previous.date < getToday()) {
-            await deleteLocal(userId, previous.id);
-        }
+        if (previous.date !== date && !(previous.completedAt && !previous.pending && !previous.conflict &&
+            previous.date < date)) continue;
+        await withVisitLock(userId, previous.id, async () => {
+            const current = await getLocal(userId, previous.id);
+            if (current && (
+                (current.completedAt && !current.pending && !current.conflict && current.date < date) ||
+                isObsoleteLocalVisit(current, date, currentIds)
+            )) await deleteLocal(userId, previous.id);
+        });
     }
     for (const visit of data.visits) {
         await withVisitLock(userId, visit.id, async () => {
@@ -155,5 +173,5 @@ export async function refreshToday(userId: string): Promise<string[]> {
             }
         });
     }
-    return data.visits.map((visit) => visit.id);
+    return [...currentIds];
 }

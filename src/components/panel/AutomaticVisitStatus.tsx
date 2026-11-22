@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { listLocal, refreshToday, syncAll } from '@/lib/automatic-visits';
+import { listLocal, refreshToday, syncAll, todayVisitIds } from '@/lib/automatic-visits';
 import { listEncrypted } from '@/lib/offline-storage';
 import { getToday } from '@/lib/dates';
 
@@ -45,21 +45,14 @@ function activeWorker(registration: ServiceWorkerRegistration): Promise<ServiceW
     });
 }
 
-function readStamp(key: string): number {
-    try { return Number(localStorage.getItem(key)) || 0; } catch { return 0; }
-}
-
-function writeStamp(key: string, value: number) {
-    try { localStorage.setItem(key, String(value)); } catch { /* El almacenamiento puede estar desactivado. */ }
-}
-
 export default function AutomaticVisitStatus({ userId }: { userId: string }) {
     const [pending, setPending] = React.useState(0);
     const [conflicts, setConflicts] = React.useState(0);
     const [conflictId, setConflictId] = React.useState('');
     const [ready, setReady] = React.useState(false);
     const [available, setAvailable] = React.useState(0);
-    const [total, setTotal] = React.useState(0);
+    const [total, setTotal] = React.useState<number | null>(null);
+    const [verified, setVerified] = React.useState(false);
     const [pages, setPages] = React.useState(false);
     const [preparing, setPreparing] = React.useState(false);
     const [error, setError] = React.useState('');
@@ -69,22 +62,32 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
         let running = false;
         let lastAttempt = 0;
         let lastRefresh = 0;
+        let verifiedDate = '';
+        let verifiedIds: string[] | null = null;
         let lastPrefetch = 0;
-        const refreshKey = `jym-auto-refresh-${userId}`;
         const prefetchKey = `jym-auto-prefetch-${userId}`;
         async function update() {
+            let visits: Awaited<ReturnType<typeof listLocal>>;
             try {
-                const visits = await listLocal(userId);
-                if (!active) return;
-                setPending(visits.filter((visit) => visit.pending).length);
-                setConflicts(visits.filter((visit) => visit.conflict).length);
-                setConflictId(visits.find((visit) => visit.conflict)?.id ?? '');
-                const today = visits.filter((visit) => visit.date === getToday() && !visit.completedAt);
-                setTotal(today.length);
+                visits = await listLocal(userId);
+                setLegacy((await listEncrypted()).some((entry) => entry.pending && entry.userId === userId));
+            } catch {
+                if (active) setError('El almacenamiento del teléfono no está disponible.');
+                return;
+            }
+            if (!active) return;
+            setPending(visits.filter((visit) => visit.pending).length);
+            setConflicts(visits.filter((visit) => visit.conflict).length);
+            setConflictId(visits.find((visit) => visit.conflict)?.id ?? '');
+            const date = getToday();
+            const ids = todayVisitIds(visits, date, verifiedDate === date ? verifiedIds : null);
+            setTotal(ids.length);
+            setVerified(verifiedDate === date);
+            try {
                 const registration = await navigator.serviceWorker?.getRegistration('/panel');
                 if (registration?.active) {
                     const status = await workerMessage(registration.active, {
-                        type: 'offline-status', date: getToday(), ids: today.map((visit) => visit.id),
+                        type: 'offline-status', date, ids,
                     }, 4_000) as OfflineStatus;
                     if (active) {
                         setAvailable(status.available.length);
@@ -96,8 +99,14 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
                     setPages(false);
                     setReady(false);
                 }
-                setLegacy((await listEncrypted()).some((entry) => entry.pending && entry.userId === userId));
-            } catch { if (active) setError('El almacenamiento del teléfono no está disponible.'); }
+            } catch {
+                if (active) {
+                    setAvailable(0);
+                    setPages(false);
+                    setReady(false);
+                    if (ids.length > 0) setError('No se pudieron comprobar las páginas guardadas en este dispositivo.');
+                }
+            }
         }
         async function connected(force = false) {
             if (!userId || !navigator.onLine || document.hidden || running ||
@@ -109,13 +118,15 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
                 const prepare = async () => {
                     await syncAll(userId);
                     let ids: string[];
-                    if (!force && Date.now() - Math.max(lastRefresh, readStamp(refreshKey)) < REFRESH_INTERVAL) {
-                        ids = (await listLocal(userId)).filter((visit) => visit.date === getToday() &&
-                            !visit.completedAt).map((visit) => visit.id);
+                    const date = getToday();
+                    if (!force && verifiedDate === date && Date.now() - lastRefresh < REFRESH_INTERVAL &&
+                        verifiedIds !== null) {
+                        ids = verifiedIds;
                     } else {
                         ids = await refreshToday(userId);
                         lastRefresh = Date.now();
-                        writeStamp(refreshKey, lastRefresh);
+                        verifiedDate = date;
+                        verifiedIds = ids;
                     }
                     if (active) setError('');
 
@@ -145,8 +156,7 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
                     } catch { /* La caché del navegador sigue disponible. */ }
                 };
                 if (navigator.locks) {
-                    await navigator.locks.request(`jym-auto-refresh-${userId}`, { ifAvailable: true },
-                        async (lock) => { if (lock) await prepare(); });
+                    await navigator.locks.request(`jym-auto-refresh-${userId}`, prepare);
                 } else {
                     await prepare();
                 }
@@ -187,7 +197,14 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
                 ready && !pending ? 'border-emerald-200 bg-emerald-50 text-emerald-900' :
                     'border-amber-200 bg-amber-50 text-amber-900'
         }`}>
-            <span className="block">{ready
+            <span className="block">{total === null ? 'Comprobando la jornada guardada…'
+                : !verified
+                    ? preparing ? 'Consultando las visitas de hoy y preparando la copia local…'
+                        : `No se pudo verificar la agenda de hoy. Hay ${total} visita(s) en este dispositivo.`
+                : total === 0 && !preparing
+                    ? `No hay visitas programadas para hoy.${
+                        ready ? ' Hoy y Ruta están disponibles sin internet.' : ''}`
+                : ready
                 ? `Jornada lista sin internet: Hoy, Ruta y ${available} visita(s) preparadas.`
                 : preparing ? `Preparando la jornada… ${available}/${total} visitas disponibles.`
                     : `${available}/${total} visitas disponibles sin internet. ${
@@ -197,8 +214,9 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
             </span>}
             {conflicts > 0 && <span className="block">{conflicts} visita(s) con conflicto: conserva los cambios locales y revísalos.</span>}
             {error && <span className="block">{error}</span>}
-            {!ready && total > 0 && <span className="ml-2">No salgas sin comprobar la copia offline.</span>}
-            {!ready && !preparing && <button type="button" disabled={typeof navigator !== 'undefined' && !navigator.onLine}
+            {!ready && total !== null && total > 0 && <span className="ml-2">No salgas sin comprobar la copia offline.</span>}
+            {!ready && !preparing && (total === null || total > 0 || error) &&
+                <button type="button" disabled={typeof navigator !== 'undefined' && !navigator.onLine}
                 onClick={() => window.dispatchEvent(new Event('jym-prepare-now'))}
                 className="ml-2 underline disabled:opacity-50">Reintentar preparación</button>}
             {conflictId && <a href={`/panel/visitas/${conflictId}`} className="ml-2 underline">Revisar visita →</a>}
