@@ -157,9 +157,12 @@ scripts/                 seeds de dueño y datos demo
 3. En **Ajustes**, el dueño selecciona la cuenta de José; José instala la PWA desde
    su navegador y activa los avisos desde su cuenta. En iPhone, primero debe añadir
    la PWA a la pantalla de inicio. Probar envío y permisos en el teléfono real.
-4. Abrir **Hoy** con internet: la PWA guarda automáticamente las visitas del día,
-   sus páginas y recursos para usarlos en ese teléfono. No hay PIN ni botón de
-   descarga. Una visita nunca cargada en el teléfono no se puede abrir sin red.
+4. Abrir **Hoy** con internet y esperar el aviso **«Jornada lista sin internet»**:
+   la PWA comprueba Hoy, Ruta, todas las visitas del día y sus recursos en ese
+   teléfono. Si aparece «Preparando» o faltan visitas, **no asumir que está lista**:
+   mantener la app abierta y recuperar una conexión estable. Con señal débil, una
+   página ya preparada se abre desde el teléfono si la red tarda más de unos segundos.
+   Una visita nunca preparada en el teléfono no se puede abrir sin red.
    La copia local (incluidos códigos de acceso) **no está cifrada con un PIN**:
    proteger el teléfono con bloqueo de pantalla. Al cerrar sesión se borran las
    copias y se advierte si hay cambios pendientes. Los registros anteriores con
@@ -173,4 +176,23 @@ scripts/                 seeds de dueño y datos demo
    la copia local para compararla con el servidor. El seguimiento de floculación
    y las tareas de llaves de llenado requieren internet; no dejar una llave
    abierta sin alarma independiente. No hay push garantizado sin conexión:
-   usar también una alarma para la bomba. Probar el flujo en ambos teléfonos.
+    usar también una alarma para la bomba. Probar el flujo en ambos teléfonos.
+
+### Comprobación de campo antes de usarla sin red
+
+1. En cada teléfono, abrir Hoy con Internet, esperar «Jornada lista sin internet»
+   y confirmar el número de visitas previstas. No cerrar sesión durante la jornada.
+2. Activar modo avión y cerrar/reabrir la app. Abrir Hoy, Ruta y dos visitas;
+   registrar llegada, checklist, notas, productos y horas de bomba. Confirmar
+   salida: debe decir **pendiente de confirmar en el servidor**.
+3. Cambiar entre visitas y volver a abrir la app: los cambios locales deben
+   conservarse. Las listas de Hoy y Ruta pueden ser copias anteriores; consultar
+   el progreso dentro de cada visita.
+4. Desactivar modo avión y abrir el panel. Esperar a que desaparezca el aviso de
+   cambios pendientes; comprobar en las visitas que el servidor refleja el trabajo.
+   Ante conflicto o error, conservar los datos locales y revisarlos antes de borrar
+   copias o cerrar sesión.
+5. Repetir con la red muy lenta: comprobar el aviso «Abriendo página…», que no se
+   pueda enviar el mismo formulario varias veces y que una página preparada se abra
+   sin quedar esperando la red indefinidamente. Google Maps, seguimientos y tareas
+   de llaves de llenado requieren conexión; utilizar una alarma independiente.

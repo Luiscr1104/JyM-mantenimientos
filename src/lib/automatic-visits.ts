@@ -96,6 +96,7 @@ export async function syncVisit(userId: string, id: string): Promise<void> {
             response = await fetch('/api/panel/offline/sync', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(syncBody(visit)),
+                signal: AbortSignal.timeout(12_000),
             });
         } catch { return; }
         const data = await response.json().catch(() => ({}));
@@ -129,7 +130,9 @@ export async function syncAll(userId: string): Promise<void> {
 }
 
 export async function refreshToday(userId: string): Promise<string[]> {
-    const response = await fetch('/api/panel/offline/prepare', { cache: 'no-store' });
+    const response = await fetch('/api/panel/offline/prepare', {
+        cache: 'no-store', signal: AbortSignal.timeout(12_000),
+    });
     if (!response.ok) throw new Error(`El servidor respondió ${response.status}. Las visitas locales siguen guardadas.`);
     const data = await response.json() as { userId: string; visits: OfflineVisit[] };
     if (data.userId !== userId || !Array.isArray(data.visits)) throw new Error('Sesión inesperada.');

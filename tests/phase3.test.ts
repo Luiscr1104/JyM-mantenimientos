@@ -82,7 +82,7 @@ test('una caché llena no impide mostrar la página recibida por internet', asyn
             match: async () => null,
         },
         fetch: async () => new Response('<h1>Hoy</h1>', { headers: { 'content-type': 'text/html' } }),
-        Response, URL, console: { warn: () => {} },
+        Response, URL, AbortSignal, setTimeout, console: { warn: () => {} },
     });
     let received: Promise<Response> | undefined;
     const jobs: Promise<unknown>[] = [];
@@ -94,6 +94,176 @@ test('una caché llena no impide mostrar la página recibida por internet', asyn
     assert.ok(received);
     assert.equal(await (await received).text(), '<h1>Hoy</h1>');
     await Promise.all(jobs);
+});
+
+test('con red lenta se abre la página preparada y la respuesta posterior actualiza la copia', async () => {
+    const handlers = new Map<string, (event: {
+        request: { method: string; url: string; mode: string };
+        respondWith: (response: Promise<Response>) => void;
+        waitUntil: (job: Promise<unknown>) => void;
+    }) => void>();
+    let finishNetwork!: (response: Response) => void;
+    const network = new Promise<Response>((resolve) => { finishNetwork = resolve; });
+    const saved: string[] = [];
+    runInNewContext(readFileSync('public/sw.js', 'utf8'), {
+        self: {
+            location: { origin: 'https://jym.test' },
+            addEventListener: (type: string, handler: (event: any) => void) => handlers.set(type, handler),
+        },
+        caches: {
+            match: async () => new Response('Copia local'),
+            open: async () => ({ put: async (_path: string, response: Response) => {
+                saved.push(await response.text());
+            } }),
+        },
+        fetch: async () => network,
+        Response, URL, AbortSignal, clearTimeout,
+        setTimeout: (callback: () => void) => { queueMicrotask(callback); },
+        console: { warn: () => {} },
+    });
+    let received!: Promise<Response>;
+    const jobs: Promise<unknown>[] = [];
+    handlers.get('fetch')!({
+        request: { method: 'GET', mode: 'navigate',
+            url: 'https://jym.test/panel/visitas/a8aff1e6-7759-494c-9423-6a6a3fbd2e26' },
+        respondWith: (response) => { received = response; },
+        waitUntil: (job) => { jobs.push(job); },
+    });
+    assert.equal(await (await received).text(), 'Copia local');
+    finishNetwork(new Response('Página nueva', { headers: { 'content-type': 'text/html' } }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await Promise.all(jobs);
+    assert.deepEqual(saved, ['Página nueva']);
+});
+
+test('sin página preparada ni red se muestra un error con salida, no un spinner infinito', async () => {
+    const handlers = new Map<string, (event: {
+        request: { method: string; url: string; mode: string };
+        respondWith: (response: Promise<Response>) => void;
+        waitUntil: (job: Promise<unknown>) => void;
+    }) => void>();
+    runInNewContext(readFileSync('public/sw.js', 'utf8'), {
+        self: {
+            location: { origin: 'https://jym.test' },
+            addEventListener: (type: string, handler: (event: any) => void) => handlers.set(type, handler),
+        },
+        caches: { match: async () => null },
+        fetch: async () => { throw new Error('Sin conexión'); },
+        Response, URL, AbortSignal, console: { warn: () => {} },
+    });
+    let received!: Promise<Response>;
+    handlers.get('fetch')!({
+        request: { method: 'GET', mode: 'navigate', url: 'https://jym.test/panel/agenda' },
+        respondWith: (response) => { received = response; },
+        waitUntil: () => {},
+    });
+    const response = await received;
+    assert.equal(response.status, 503);
+    assert.match(await response.text(), /Esta página no está disponible sin conexión/);
+});
+
+test('Ruta no presenta el recorrido de otro día cuando falta red', async () => {
+    const handlers = new Map<string, (event: {
+        request: { method: string; url: string; mode: string };
+        respondWith: (response: Promise<Response>) => void;
+        waitUntil: (job: Promise<unknown>) => void;
+    }) => void>();
+    runInNewContext(readFileSync('public/sw.js', 'utf8'), {
+        self: {
+            location: { origin: 'https://jym.test' },
+            addEventListener: (type: string, handler: (event: any) => void) => handlers.set(type, handler),
+        },
+        caches: { match: async (path: string) => path === '/panel/offline-ready'
+            ? new Response(JSON.stringify({ date: '2026-11-22' })) : new Response('Ruta de ayer') },
+        fetch: async () => { throw new Error('Sin conexión'); },
+        Response, URL, AbortSignal, console: { warn: () => {} },
+    });
+    let received!: Promise<Response>;
+    handlers.get('fetch')!({
+        request: { method: 'GET', mode: 'navigate', url: 'https://jym.test/panel/ruta?date=2026-11-23' },
+        respondWith: (response) => { received = response; },
+        waitUntil: () => {},
+    });
+    assert.equal((await received).status, 503);
+});
+
+test('si el servidor responde con error, la visita preparada sigue disponible', async () => {
+    const handlers = new Map<string, (event: {
+        request: { method: string; url: string; mode: string };
+        respondWith: (response: Promise<Response>) => void;
+        waitUntil: (job: Promise<unknown>) => void;
+    }) => void>();
+    runInNewContext(readFileSync('public/sw.js', 'utf8'), {
+        self: {
+            location: { origin: 'https://jym.test' },
+            addEventListener: (type: string, handler: (event: any) => void) => handlers.set(type, handler),
+        },
+        caches: { match: async () => new Response('Visita preparada') },
+        fetch: async () => new Response('Fallo del servidor', { status: 503 }),
+        Response, URL, AbortSignal, setTimeout, clearTimeout, console: { warn: () => {} },
+    });
+    let received!: Promise<Response>;
+    handlers.get('fetch')!({
+        request: { method: 'GET', mode: 'navigate',
+            url: 'https://jym.test/panel/visitas/a8aff1e6-7759-494c-9423-6a6a3fbd2e26' },
+        respondWith: (response) => { received = response; },
+        waitUntil: () => {},
+    });
+    assert.equal(await (await received).text(), 'Visita preparada');
+});
+
+test('la jornada solo figura lista si existen Hoy, Ruta, visitas y recursos', async () => {
+    type MessageEvent = {
+        data: { type: string; ids: string[]; date: string };
+        ports: Array<{ postMessage: (data: any) => void }>;
+        waitUntil: (job: Promise<unknown>) => void;
+    };
+    const handlers = new Map<string, (event: MessageEvent) => void>();
+    const stores = new Map<string, Map<string, Response>>();
+    const cache = (name: string) => {
+        if (!stores.has(name)) stores.set(name, new Map());
+        const entries = stores.get(name)!;
+        return {
+            put: async (path: string, response: Response) => { entries.set(path, response); },
+            match: async (path: string) => entries.get(path)?.clone(),
+        };
+    };
+    runInNewContext(readFileSync('public/sw.js', 'utf8'), {
+        self: {
+            location: { origin: 'https://jym.test' },
+            addEventListener: (type: string, handler: (event: MessageEvent) => void) => handlers.set(type, handler),
+        },
+        caches: {
+            open: async (name: string) => cache(name),
+            delete: async (name: string) => stores.delete(name),
+        },
+        fetch: async (path: string) => path.startsWith('/_astro/')
+            ? new Response('export const ready = true')
+            : new Response('<script src="/_astro/campo.js"></script>', {
+                headers: { 'content-type': 'text/html' },
+            }),
+        Response, URL, AbortSignal, console: { warn: () => {} },
+    });
+    const id = 'a8aff1e6-7759-494c-9423-6a6a3fbd2e26';
+    const send = async (type: string) => {
+        let reply!: (value: any) => void;
+        const result = new Promise<any>((resolve) => { reply = resolve; });
+        const jobs: Promise<unknown>[] = [];
+        handlers.get('message')!({
+            data: { type, ids: [id], date: '2026-11-22' },
+            ports: [{ postMessage: reply }],
+            waitUntil: (job) => { jobs.push(job); },
+        });
+        const data = await result;
+        await Promise.all(jobs);
+        return data;
+    };
+    assert.equal((await send('offline-status')).ready, false);
+    assert.equal((await send('prefetch-visits')).ok, true);
+    assert.deepEqual(Array.from((await send('offline-status')).available), [id]);
+    assert.equal((await send('offline-status')).ready, true);
+    stores.get('jym-panel-static-v3')!.delete('/_astro/campo.js');
+    assert.equal((await send('offline-status')).ready, false);
 });
 
 test('el protocolo de salida se mantiene antes de sincronizar', () => {

@@ -50,6 +50,11 @@ const isActive = (href: string, exact: boolean) =>
         />
     </head>
     <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
+        <div id="panel-navigation-status" role="status" aria-live="polite"
+            class="fixed inset-x-4 top-3 z-50 mx-auto hidden max-w-md rounded-xl border border-sky-200 bg-white px-4 py-3 text-sm font-bold text-sky-900 shadow-lg">
+            <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-200 border-t-sky-700 align-middle" aria-hidden="true"></span>
+            <span class="ml-2" data-message>Abriendo página…</span>
+        </div>
         <div class="lg:flex lg:min-h-screen">
             <!-- Sidebar escritorio -->
             <aside
@@ -144,6 +149,10 @@ const isActive = (href: string, exact: boolean) =>
                 </header>
 
                 <main data-user-id={Astro.locals.user?.id ?? ''} class="min-w-0 flex-1 px-5 pb-28 pt-5 sm:px-6 lg:px-10 lg:py-8 lg:pb-10">
+                    <p id="panel-connection-status" role="status"
+                        class="mb-4 hidden rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                        Sin conexión. Hoy y Ruta pueden mostrar la última copia guardada; abre cada visita para ver sus cambios locales.
+                    </p>
                     <AutomaticVisitStatus client:load userId={Astro.locals.user?.id ?? ''} />
                     <slot />
                 </main>
@@ -199,12 +208,73 @@ const isActive = (href: string, exact: boolean) =>
                         await clearAutomaticVisits();
                         const registration = await navigator.serviceWorker?.getRegistration();
                         registration?.active?.postMessage({ type: 'clear-private' });
-                        await caches.delete('jym-panel-pages-v2');
+                        await caches.delete('jym-panel-pages-v3');
                         form.submit();
                     } catch {
                         window.alert('No se pudieron borrar los datos offline. Cierra otras pestañas del panel e inténtalo de nuevo.');
                     }
                 });
+            });
+            const navigation = document.querySelector<HTMLElement>('#panel-navigation-status')!;
+            const message = navigation.querySelector<HTMLElement>('[data-message]')!;
+            const connection = document.querySelector<HTMLElement>('#panel-connection-status')!;
+            let slowTimer: number | undefined;
+            let pendingPath = '';
+            const showLoading = (text: string) => {
+                message.textContent = text;
+                navigation.classList.remove('hidden');
+                window.clearTimeout(slowTimer);
+                slowTimer = window.setTimeout(() => {
+                    message.textContent = 'Conexión lenta. Espera; no pulses de nuevo.';
+                }, 8_000);
+            };
+            const resetLoading = () => {
+                window.clearTimeout(slowTimer);
+                pendingPath = '';
+                navigation.classList.add('hidden');
+                document.querySelectorAll<HTMLButtonElement>('form[data-submitting] button[type="submit"]')
+                    .forEach((button) => { button.disabled = false; });
+                document.querySelectorAll('form[data-submitting]').forEach((form) => {
+                    delete (form as HTMLElement).dataset.submitting;
+                });
+            };
+            const connectionChanged = () => { connection.classList.toggle('hidden', navigator.onLine); };
+            connectionChanged();
+            window.addEventListener('online', connectionChanged);
+            window.addEventListener('offline', connectionChanged);
+            window.addEventListener('pageshow', resetLoading);
+            window.addEventListener('pagehide', resetLoading);
+            document.addEventListener('click', (event) => {
+                if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey ||
+                    event.shiftKey || event.altKey) return;
+                const link = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
+                if (!link || link.target || link.hasAttribute('download') ||
+                    link.origin !== window.location.origin ||
+                    (link.pathname === window.location.pathname && link.search === window.location.search &&
+                        link.hash)) return;
+                if (pendingPath === link.href) { event.preventDefault(); return; }
+                pendingPath = link.href;
+                if (link.pathname.startsWith('/panel/')) showLoading('Abriendo página…');
+                else if (link.pathname === '/panel') showLoading('Abriendo Hoy…');
+            });
+            document.addEventListener('submit', (event) => {
+                if (event.defaultPrevented) return;
+                const form = event.target as HTMLFormElement;
+                if (form.action.endsWith('/api/auth/signout')) return;
+                if (form.dataset.submitting) { event.preventDefault(); return; }
+                if (form.method.toLowerCase() === 'post' && !navigator.onLine) {
+                    event.preventDefault();
+                    window.alert('Esta acción necesita conexión. Las visitas se guardan desde su propia pantalla.');
+                    return;
+                }
+                form.dataset.submitting = 'true';
+                showLoading(form.method.toLowerCase() === 'post' ? 'Enviando cambios…' : 'Abriendo página…');
+                // Desactivar después de que el navegador construya el FormData, sin perder
+                // el botón pulsado (move/end en Ruta) ni sus valores.
+                window.setTimeout(() => {
+                    form.querySelectorAll<HTMLButtonElement>('button[type="submit"]')
+                        .forEach((button) => { button.disabled = true; });
+                }, 0);
             });
         </script>
     </body>

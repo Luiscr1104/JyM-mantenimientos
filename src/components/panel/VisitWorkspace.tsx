@@ -115,7 +115,9 @@ export default function VisitWorkspace({
             try {
                 let visit = await getLocal(userId, id);
                 if (!visit && navigator.onLine && initial.status !== 'completed' && initial.status !== 'skipped') {
-                    const response = await fetch(`/api/panel/offline/prepare?date=${date}`, { cache: 'no-store' });
+                    const response = await fetch(`/api/panel/offline/prepare?date=${date}`, {
+                        cache: 'no-store', signal: AbortSignal.timeout(12_000),
+                    });
                     if (!response.ok) throw new Error('No se pudo preparar esta visita en el teléfono.');
                     const data = await response.json() as { userId: string; visits: LocalVisit[] };
                     if (data.userId !== userId) throw new Error('La sesión cambió. Vuelve a entrar.');
@@ -219,6 +221,7 @@ export default function VisitWorkspace({
             method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
+            signal: AbortSignal.timeout(12_000),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error ?? 'No se pudo completar la acción.');
@@ -320,7 +323,9 @@ export default function VisitWorkspace({
             const data = await request(`/api/panel/visits/${id}/follow-up`, 'POST', { date: followUpDate });
             setFollowUp(data.visit);
         } catch (reason) {
-            setError(reason instanceof Error ? reason.message : 'No se pudo agendar el seguimiento.');
+            setError(reason instanceof DOMException && reason.name === 'TimeoutError'
+                ? 'La red tardó demasiado. Comprueba si el seguimiento ya se agendó antes de volver a pulsar.'
+                : reason instanceof Error ? reason.message : 'No se pudo agendar el seguimiento.');
         } finally {
             setBusy(false);
         }

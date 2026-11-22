@@ -77,6 +77,7 @@ export default function OfflineVisits() {
         const response = await fetch('/api/panel/offline/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(12_000),
             body: JSON.stringify({
                 syncId: visit.syncId,
                 visitId: visit.id,

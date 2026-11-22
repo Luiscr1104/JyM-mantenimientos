@@ -1,7 +1,16 @@
 // Para abrir visitas sin internet se guardan únicamente páginas del panel autenticado
 // y recursos estáticos; las respuestas de API y credenciales nunca se cachean.
-const CACHE = 'jym-panel-static-v2';
-const PAGES = 'jym-panel-pages-v2';
+const CACHE = 'jym-panel-static-v3';
+const PAGES = 'jym-panel-pages-v3';
+const READY = '/panel/offline-ready';
+const NAVIGATION_WAIT = 2500;
+const dateFormat = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Costa_Rica', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+function today() {
+    const parts = Object.fromEntries(dateFormat.formatToParts(new Date()).map(({ type, value }) => [type, value]));
+    return `${parts.year}-${parts.month}-${parts.day}`;
+}
 let privateEpoch = 0;
 let prefetchJob = null;
 let prefetchSnapshot = null;
@@ -28,23 +37,54 @@ self.addEventListener('fetch', (event) => {
     const path = new URL(request.url).pathname;
     if (request.mode === 'navigate' && (path === '/panel' || path.startsWith('/panel/'))) {
         event.respondWith((async () => {
-            try {
-                const response = await fetch(request);
+            let cached = await caches.match(path);
+            if (path === '/panel' || path === '/panel/ruta') {
+                const prepared = await caches.match(READY);
+                const date = prepared ? (await prepared.json()).date : null;
+                const requested = path === '/panel/ruta'
+                    ? new URL(request.url).searchParams.get('date') ?? today() : today();
+                if (requested !== date) cached = null;
+            }
+            // Con una copia disponible, una red débil no debe bloquear el trabajo de campo.
+            // La petición sigue actualizando la caché aunque se muestre primero la copia.
+            const epoch = privateEpoch;
+            const network = (async () => {
+                const response = await fetch(request, { signal: AbortSignal.timeout(15_000) });
+                if (response.status >= 500 && cached) return cached;
                 if (response.ok && !response.redirected &&
                     response.headers.get('content-type')?.includes('text/html') &&
-                    (path === '/panel' || path === '/panel/ruta' ||
+                    (path === '/panel' || (path === '/panel/ruta' &&
+                        !new URL(request.url).searchParams.has('date')) ||
                         /^\/panel\/visitas\/[0-9a-f-]{36}$/.test(path))) {
-                    const epoch = privateEpoch;
                     const copy = response.clone();
                     event.waitUntil(caches.open(PAGES).then((cache) =>
                         epoch === privateEpoch ? cache.put(path, copy) : undefined
                     ).catch((error) => console.warn('No se pudo guardar la página offline:', error)));
                 }
                 return response;
+            })();
+            // La navegación puede abandonar la página; mantener viva la actualización.
+            event.waitUntil(network.catch(() => {}));
+            try {
+                if (!cached) return await network;
+                let timer;
+                try {
+                    return await Promise.race([
+                        network,
+                        new Promise((resolve) => { timer = setTimeout(() => resolve(cached), NAVIGATION_WAIT); }),
+                    ]);
+                } finally {
+                    clearTimeout(timer);
+                }
             } catch {
-                const cached = await caches.match(path);
                 if (cached) return cached;
-                return Response.error();
+                return new Response(`<!doctype html><html lang="es"><meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <title>Sin conexión | JyM</title><body style="font:16px system-ui;padding:24px">
+                    <h1>Esta página no está disponible sin conexión</h1>
+                    <p>El trabajo ya guardado en el teléfono no se borra. Vuelve a Hoy cuando recuperes la señal.</p>
+                    <a href="/panel">Ir a Hoy</a> · <a href="">Reintentar</a></body></html>`,
+                    { status: 503, headers: { 'content-type': 'text/html; charset=utf-8' } });
             }
         })());
         return;
@@ -68,6 +108,31 @@ self.addEventListener('message', (event) => {
     if (event.data?.type === 'clear-private') {
         privateEpoch++;
         event.waitUntil(caches.delete(PAGES));
+    }
+    if (event.data?.type === 'offline-status') {
+        event.waitUntil((async () => {
+            const cache = await caches.open(PAGES);
+            const marker = await cache.match(READY);
+            const ready = marker ? await marker.json() : null;
+            const date = event.data.date;
+            const ids = Array.isArray(event.data.ids) ? event.data.ids : [];
+            const available = [];
+            for (const id of ids) {
+                if (await cache.match(`/panel/visitas/${id}`)) available.push(id);
+            }
+            const pages = Boolean(await cache.match('/panel')) && Boolean(await cache.match('/panel/ruta'));
+            const assets = ready?.assets?.length
+                ? await caches.open(CACHE).then(async (assetCache) => {
+                    for (const path of ready.assets) {
+                        if (!await assetCache.match(path)) return false;
+                    }
+                    return true;
+                }) : false;
+            event.ports[0]?.postMessage({
+                available, pages, ready: pages && assets && ready?.date === date &&
+                    ids.every((id) => available.includes(id) && ready.ids.includes(id)),
+            });
+        })().catch(() => event.ports[0]?.postMessage({ available: [], pages: false, ready: false })));
     }
     if (event.data?.type === 'prefetch-visits') {
         const snapshot = JSON.stringify({ date: event.data.date, ids: event.data.ids });
@@ -95,6 +160,7 @@ self.addEventListener('message', (event) => {
                             failed = true;
                             continue;
                         }
+                        if (epoch !== privateEpoch) break;
                         await pageCache.put(path.startsWith('/panel/ruta?') ? '/panel/ruta' : path, response.clone());
                         const html = await response.text();
                         for (const match of html.matchAll(/(?:src|href)="(\/_astro\/[^"]+)"/g)) {
@@ -108,7 +174,7 @@ self.addEventListener('message', (event) => {
                     seen.add(path);
                     try {
                         const cached = await assetCache.match(path);
-                        const asset = cached || await fetch(path);
+                        const asset = cached || await fetch(path, { signal: AbortSignal.timeout(10_000) });
                         if (!asset.ok) { failed = true; continue; }
                         if (!cached) await assetCache.put(path, asset.clone());
                         if (path.endsWith('.js')) {
@@ -120,8 +186,12 @@ self.addEventListener('message', (event) => {
                         }
                     } catch { failed = true; }
                 }
+                const ok = epoch === privateEpoch && !failed && !assetQueue.length;
+                if (ok) await pageCache.put(READY, new Response(JSON.stringify({
+                    date: event.data.date, ids: [...new Set(event.data.ids)], assets: [...seen],
+                }), { headers: { 'content-type': 'application/json' } }));
                 if (epoch !== privateEpoch) await caches.delete(PAGES);
-                return epoch === privateEpoch && !failed && !assetQueue.length;
+                return ok;
             })();
         }
         const job = prefetchJob;

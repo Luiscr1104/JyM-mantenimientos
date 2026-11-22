@@ -59,6 +59,7 @@ export default function WaterFillWidget({
             const response = await fetch('/api/panel/water-fill', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(12_000),
                 body: JSON.stringify({
                     ...(visitId ? { visitId } : { propertyId }),
                     minutes: Number(minutes),
@@ -69,7 +70,9 @@ export default function WaterFillWidget({
             setTasks((current) => [...current, { ...data.task, propertyName }]);
             setMessage('Llave registrada. La tarea seguirá en Hoy hasta confirmar su cierre.');
         } catch (reason) {
-            setError(reason instanceof Error ? reason.message : 'Error de conexión.');
+            setError(reason instanceof DOMException && reason.name === 'TimeoutError'
+                ? 'La red tardó demasiado. Comprueba si la llave ya aparece antes de volver a registrarla.'
+                : reason instanceof Error ? reason.message : 'Error de conexión.');
         } finally {
             setBusy(false);
         }
@@ -82,13 +85,17 @@ export default function WaterFillWidget({
         setError('');
         setMessage('');
         try {
-            const response = await fetch(`/api/panel/water-fill/${id}/close`, { method: 'POST' });
+            const response = await fetch(`/api/panel/water-fill/${id}/close`, {
+                method: 'POST', signal: AbortSignal.timeout(12_000),
+            });
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error ?? 'No se pudo cerrar la tarea.');
             setTasks((current) => current.filter((task) => task.id !== id));
             setMessage('Llave cerrada y confirmada.');
         } catch (reason) {
-            setError(reason instanceof Error ? reason.message : 'Error de conexión.');
+            setError(reason instanceof DOMException && reason.name === 'TimeoutError'
+                ? 'La red tardó demasiado. Comprueba si la llave sigue pendiente antes de repetir el cierre.'
+                : reason instanceof Error ? reason.message : 'Error de conexión.');
         } finally {
             setBusy(false);
         }

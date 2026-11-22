@@ -5,6 +5,45 @@ import { getToday } from '@/lib/dates';
 
 const REFRESH_INTERVAL = 5 * 60_000;
 const PREFETCH_INTERVAL = 15 * 60_000;
+type OfflineStatus = { available: string[]; pages: boolean; ready: boolean };
+
+function workerMessage(worker: ServiceWorker, data: unknown, timeout: number): Promise<OfflineStatus | { ok: boolean }> {
+    return new Promise((resolve, reject) => {
+        const channel = new MessageChannel();
+        const timer = window.setTimeout(() => {
+            channel.port1.close();
+            reject(new Error('La preparación offline tardó demasiado. Se reintentará con conexión.'));
+        }, timeout);
+        channel.port1.onmessage = (event) => {
+            window.clearTimeout(timer);
+            channel.port1.close();
+            resolve(event.data);
+        };
+        try {
+            worker.postMessage(data, [channel.port2]);
+        } catch (reason) {
+            window.clearTimeout(timer);
+            channel.port1.close();
+            reject(reason);
+        }
+    });
+}
+
+function activeWorker(registration: ServiceWorkerRegistration): Promise<ServiceWorker> {
+    if (registration.active) return Promise.resolve(registration.active);
+    return new Promise((resolve, reject) => {
+        const timer = window.setTimeout(() =>
+            reject(new Error('No se pudo activar el modo sin conexión. Reabre el panel con internet.')), 15_000);
+        navigator.serviceWorker.ready.then((ready) => {
+            window.clearTimeout(timer);
+            if (ready.active) resolve(ready.active);
+            else reject(new Error('No se pudo activar el modo sin conexión.'));
+        }, (reason) => {
+            window.clearTimeout(timer);
+            reject(reason);
+        });
+    });
+}
 
 function readStamp(key: string): number {
     try { return Number(localStorage.getItem(key)) || 0; } catch { return 0; }
@@ -19,11 +58,14 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
     const [conflicts, setConflicts] = React.useState(0);
     const [conflictId, setConflictId] = React.useState('');
     const [ready, setReady] = React.useState(false);
+    const [available, setAvailable] = React.useState(0);
+    const [total, setTotal] = React.useState(0);
+    const [pages, setPages] = React.useState(false);
+    const [preparing, setPreparing] = React.useState(false);
     const [error, setError] = React.useState('');
     const [legacy, setLegacy] = React.useState(false);
     React.useEffect(() => {
         let active = true;
-        let prepared = false;
         let running = false;
         let lastAttempt = 0;
         let lastRefresh = 0;
@@ -37,7 +79,23 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
                 setPending(visits.filter((visit) => visit.pending).length);
                 setConflicts(visits.filter((visit) => visit.conflict).length);
                 setConflictId(visits.find((visit) => visit.conflict)?.id ?? '');
-                setReady(prepared || visits.length > 0);
+                const today = visits.filter((visit) => visit.date === getToday() && !visit.completedAt);
+                setTotal(today.length);
+                const registration = await navigator.serviceWorker?.getRegistration('/panel');
+                if (registration?.active) {
+                    const status = await workerMessage(registration.active, {
+                        type: 'offline-status', date: getToday(), ids: today.map((visit) => visit.id),
+                    }, 4_000) as OfflineStatus;
+                    if (active) {
+                        setAvailable(status.available.length);
+                        setPages(status.pages);
+                        setReady(status.ready);
+                    }
+                } else if (active) {
+                    setAvailable(0);
+                    setPages(false);
+                    setReady(false);
+                }
                 setLegacy((await listEncrypted()).some((entry) => entry.pending && entry.userId === userId));
             } catch { if (active) setError('El almacenamiento del teléfono no está disponible.'); }
         }
@@ -45,46 +103,46 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
             if (!userId || !navigator.onLine || document.hidden || running ||
                 (!force && Date.now() - lastAttempt < 60_000)) return;
             running = true;
+            if (active) setPreparing(true);
             lastAttempt = Date.now();
             try {
                 const prepare = async () => {
                     await syncAll(userId);
+                    let ids: string[];
                     if (!force && Date.now() - Math.max(lastRefresh, readStamp(refreshKey)) < REFRESH_INTERVAL) {
-                        prepared = true;
-                        if (active) setError('');
-                        return;
+                        ids = (await listLocal(userId)).filter((visit) => visit.date === getToday() &&
+                            !visit.completedAt).map((visit) => visit.id);
+                    } else {
+                        ids = await refreshToday(userId);
+                        lastRefresh = Date.now();
+                        writeStamp(refreshKey, lastRefresh);
                     }
-                    const ids = await refreshToday(userId);
-                    prepared = true;
-                    lastRefresh = Date.now();
-                    writeStamp(refreshKey, lastRefresh);
                     if (active) setError('');
 
-                    if (!('serviceWorker' in navigator)) return;
-                    // No esperar indefinidamente a un service worker que no pudo instalarse.
-                    const registration = await navigator.serviceWorker.getRegistration('/panel');
-                    if (!registration?.active) return;
+                    if (!('serviceWorker' in navigator)) throw new Error('Este navegador no admite el modo sin conexión.');
+                    const existing = await navigator.serviceWorker.getRegistration('/panel');
+                    const registration = existing?.active ? existing :
+                        await navigator.serviceWorker.register('/sw.js', { scope: '/panel' });
+                    const worker = await activeWorker(registration);
                     const snapshot = JSON.stringify({ date: getToday(), ids });
                     const previous = (() => {
                         try { return JSON.parse(localStorage.getItem(prefetchKey) ?? 'null') as {
                             snapshot: string; at: number;
                         } | null; } catch { return null; }
                     })();
-                    if (previous?.snapshot === snapshot &&
+                    const status = await workerMessage(worker, {
+                        type: 'offline-status', ids, date: getToday(),
+                    }, 4_000) as OfflineStatus;
+                    if (previous?.snapshot === snapshot && status.ready &&
                         Date.now() - Math.max(lastPrefetch, previous.at) < PREFETCH_INTERVAL) return;
-                    const channel = new MessageChannel();
-                    channel.port1.onmessage = (event) => {
-                        if (event.data?.ok) {
-                            lastPrefetch = Date.now();
-                            try {
-                                localStorage.setItem(prefetchKey, JSON.stringify({ snapshot, at: lastPrefetch }));
-                            } catch { /* La caché del navegador sigue disponible. */ }
-                        } else if (active) {
-                            setError('Algunas páginas no quedaron disponibles sin internet. Abre Hoy con una conexión estable.');
-                        }
-                        channel.port1.close();
-                    };
-                    registration.active.postMessage({ type: 'prefetch-visits', ids, date: getToday() }, [channel.port2]);
+                    const result = await workerMessage(worker, {
+                        type: 'prefetch-visits', ids, date: getToday(),
+                    }, 120_000) as { ok: boolean };
+                    if (!result.ok) throw new Error('Algunas páginas no quedaron disponibles sin internet. Reintenta con una conexión estable.');
+                    lastPrefetch = Date.now();
+                    try {
+                        localStorage.setItem(prefetchKey, JSON.stringify({ snapshot, at: lastPrefetch }));
+                    } catch { /* La caché del navegador sigue disponible. */ }
                 };
                 if (navigator.locks) {
                     await navigator.locks.request(`jym-auto-refresh-${userId}`, { ifAvailable: true },
@@ -99,37 +157,54 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
                 }`);
             } finally {
                 running = false;
+                if (active) setPreparing(false);
                 await update();
             }
         }
         void update();
         if (navigator.onLine) void connected();
         const onOnline = () => { void connected(true); };
+        const onRetry = () => { void connected(true); };
         const onFocus = () => { void connected(); };
         const onChange = () => { void update(); };
         window.addEventListener('online', onOnline);
+        window.addEventListener('jym-prepare-now', onRetry);
         window.addEventListener('focus', onFocus);
         window.addEventListener('jym-visits-changed', onChange);
         const interval = window.setInterval(() => { void connected(); }, 60_000);
         return () => {
             active = false;
             window.removeEventListener('online', onOnline);
+            window.removeEventListener('jym-prepare-now', onRetry);
             window.removeEventListener('focus', onFocus);
             window.removeEventListener('jym-visits-changed', onChange);
             window.clearInterval(interval);
         };
     }, [userId]);
-    return (pending > 0 || conflicts > 0 || error || !ready || legacy) ? (
+    return (
         <div role="status" className={`mb-4 rounded-xl border px-3 py-2 text-sm font-semibold ${
-            conflicts || error ? 'border-red-200 bg-red-50 text-red-900' : 'border-amber-200 bg-amber-50 text-amber-900'
+            conflicts || error ? 'border-red-200 bg-red-50 text-red-900' :
+                ready && !pending ? 'border-emerald-200 bg-emerald-50 text-emerald-900' :
+                    'border-amber-200 bg-amber-50 text-amber-900'
         }`}>
-            {conflicts > 0 ? `${conflicts} visita(s) con conflicto: conserva los cambios locales y revísalos.` :
-                pending > 0 ? `${pending} visita(s) pendiente(s) de sincronizar. Se reintentará automáticamente.` :
-                    error || 'Abre el panel con internet para preparar las visitas de hoy automáticamente.'}
+            <span className="block">{ready
+                ? `Jornada lista sin internet: Hoy, Ruta y ${available} visita(s) preparadas.`
+                : preparing ? `Preparando la jornada… ${available}/${total} visitas disponibles.`
+                    : `${available}/${total} visitas disponibles sin internet. ${
+                        pages ? 'La jornada aún no está completamente preparada.' : 'Hoy y Ruta aún no están listos.'}`}</span>
+            {pending > 0 && <span className="block">
+                {pending} visita(s) con cambios guardados en el teléfono, pendientes de confirmar en el servidor.
+            </span>}
+            {conflicts > 0 && <span className="block">{conflicts} visita(s) con conflicto: conserva los cambios locales y revísalos.</span>}
+            {error && <span className="block">{error}</span>}
+            {!ready && total > 0 && <span className="ml-2">No salgas sin comprobar la copia offline.</span>}
+            {!ready && !preparing && <button type="button" disabled={typeof navigator !== 'undefined' && !navigator.onLine}
+                onClick={() => window.dispatchEvent(new Event('jym-prepare-now'))}
+                className="ml-2 underline disabled:opacity-50">Reintentar preparación</button>}
             {conflictId && <a href={`/panel/visitas/${conflictId}`} className="ml-2 underline">Revisar visita →</a>}
             {legacy && <a href="/panel/sin-conexion" className="ml-2 underline">
                 Hay cierres del sistema anterior con PIN; ábrelos para sincronizarlos antes de cerrar sesión.
             </a>}
         </div>
-    ) : null;
+    );
 }
