@@ -1,18 +1,25 @@
 ---
 import PanelLayout from '@/layouts/PanelLayout.astro';
 import PageHeader from '@/components/panel/PageHeader.astro';
-import { addDays, formatCompactDate, getToday, isValidDate } from '@/lib/dates';
+import { formatCompactDate, getToday, isValidDate } from '@/lib/dates';
 import { formatDateTime, formatDuration, visitStatusLabel, visitStatusStyle } from '@/lib/format';
 import { PRODUCTS, productInfo } from '@/lib/products';
-import { weekEnd, weekStart, summarizeWeeklyReport } from '@/lib/weekly-report';
+import { reportRange, shiftReportDate, type ReportPeriod } from '@/lib/report-period';
+import { summarizeWeeklyReport } from '@/lib/weekly-report';
 import { WORK_TYPES, workTypesLabel } from '@/lib/visit-types';
-import { getWeeklyReportData } from '@/server/reports';
+import { listClientsWithPropertyCount } from '@/server/clients';
+import { getReportData } from '@/server/reports';
 
 const today = getToday();
 const requestedDate = Astro.url.searchParams.get('date');
-const start = weekStart(isValidDate(requestedDate) ? requestedDate : today);
-const end = weekEnd(start);
-const { rows, products, followUps, waterTasks } = await getWeeklyReportData(start, end);
+const period: ReportPeriod = Astro.url.searchParams.get('period') === 'month' ? 'month' : 'week';
+const { start, end } = reportRange(isValidDate(requestedDate) ? requestedDate : today, period);
+const selectedClientId = Astro.url.searchParams.get('clientId');
+const clients = await listClientsWithPropertyCount();
+const selectedClient = clients.find((client) => client.id === selectedClientId);
+if (selectedClientId && !selectedClient) return Astro.redirect('/panel/reportes');
+const clientId = selectedClient?.id;
+const { rows, products, followUps, waterTasks } = await getReportData(start, end, clientId);
 const report = summarizeWeeklyReport(rows, products, waterTasks.map(({ task }) => task), today);
 const followUpBySource = new Map(followUps.map((visit) => [visit.followUpForVisitId, visit]));
 const flocculations = rows.filter(({ visit }) =>
@@ -25,6 +32,11 @@ const productEntries = PRODUCTS.filter(({ key }) => report.productTotals.has(key
 const workEntries = WORK_TYPES.filter(({ key }) => report.workTypes.has(key));
 const shortDate = (value: string) => formatCompactDate(value);
 const periodLabel = `${shortDate(start)} ${start.slice(0, 4)} – ${shortDate(end)} ${end.slice(0, 4)}`;
+const periodName = period === 'month' ? 'mes' : 'semana';
+const reportHref = (date: string) => `/panel/reportes?date=${date}&period=${period}${clientId ? `&clientId=${clientId}` : ''}`;
+const deliveryHref = clientId
+    ? `/panel/reportes/cliente?clientId=${clientId}&date=${start}&period=${period}`
+    : null;
 const quantity = (value: number) => value.toLocaleString('es-CR', { maximumFractionDigits: 2 });
 const completionPercent = report.counts.total
     ? Math.round(report.counts.completed / report.counts.total * 100)
@@ -41,35 +53,50 @@ const reviewCount = (group: typeof report.clients[number]) => group.rows.filter(
     (visit.status === 'completed' && (incompleteTasks.length > 0 || Boolean(visit.pendingReason?.trim())))).length;
 ---
 
-<PanelLayout title="Reporte semanal">
-    <PageHeader title="Reporte semanal interno" description="Trabajo registrado en las visitas de esta semana." />
+<PanelLayout title={`Reporte ${period === 'week' ? 'semanal' : 'mensual'}`}>
+    <PageHeader title="Reporte interno" description={clientId ? `Visitas de ${selectedClient?.name} en este ${periodName}.` : `Trabajo registrado en las visitas de este ${periodName}.`} />
 
     <div class="report-controls mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-        <a href={`/panel/reportes?date=${addDays(start, -7)}`} aria-label="Semana anterior"
+        <a href={reportHref(shiftReportDate(start, period, -1))} aria-label={`${period === 'month' ? 'Mes' : 'Semana'} anterior`}
             class="panel-btn panel-btn-secondary min-h-11">← Anterior</a>
         <div class="text-center">
             <h2 class="font-extrabold text-slate-900">{periodLabel}</h2>
-            <p class="text-xs text-slate-500">Semana de lunes a domingo · hora de Costa Rica</p>
+            <p class="text-xs text-slate-500">{period === 'week' ? 'Semana de lunes a domingo' : 'Mes calendario'} · hora de Costa Rica</p>
         </div>
-        <a href={`/panel/reportes?date=${addDays(start, 7)}`} aria-label="Semana siguiente"
+        <a href={reportHref(shiftReportDate(start, period, 1))} aria-label={`${period === 'month' ? 'Mes' : 'Semana'} siguiente`}
             class="panel-btn panel-btn-secondary min-h-11">Siguiente →</a>
     </div>
-    <p class="report-print-period mb-4 font-semibold text-slate-700">{periodLabel}</p>
+    <p class="report-print-period mb-4 font-semibold text-slate-700">{clientId ? `${selectedClient?.name} · ` : ''}{periodLabel}</p>
     <div class="report-controls mb-6 flex flex-wrap items-end gap-3">
-        <form method="GET" action="/panel/reportes" class="flex items-end gap-2">
+        <form method="GET" action="/panel/reportes" class="flex flex-wrap items-end gap-2">
             <label class="text-xs font-bold text-slate-700">
-                Ir a la semana de
+                Ir al {periodName} de
                 <input type="date" name="date" value={start} required
                     class="mt-1 block h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900" />
             </label>
+            <label class="text-xs font-bold text-slate-700">
+                Período
+                <select name="period" class="mt-1 block h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900">
+                    <option value="week" selected={period === 'week'}>Semanal</option>
+                    <option value="month" selected={period === 'month'}>Mensual</option>
+                </select>
+            </label>
+            <label class="text-xs font-bold text-slate-700">
+                Cliente
+                <select name="clientId" class="mt-1 block h-11 max-w-64 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900">
+                    <option value="">Todos los clientes</option>
+                    {clients.map((client) => <option value={client.id} selected={client.id === clientId}>{client.name}</option>)}
+                </select>
+            </label>
             <button type="submit" class="panel-btn panel-btn-secondary min-h-11">Ver</button>
         </form>
-        {start !== weekStart(today) && <a href="/panel/reportes" class="panel-btn panel-btn-secondary min-h-11">Semana actual</a>}
-        <button type="button" onclick="window.print()" class="panel-btn panel-btn-secondary min-h-11">Imprimir / guardar PDF</button>
+        {start !== reportRange(today, period).start && <a href={reportHref(today)} class="panel-btn panel-btn-secondary min-h-11">{period === 'week' ? 'Semana' : 'Mes'} actual</a>}
+        <button type="button" onclick="window.print()" class="panel-btn panel-btn-secondary min-h-11">Imprimir reporte interno</button>
+        {deliveryHref && <a href={deliveryHref} class="panel-btn panel-btn-primary min-h-11">Revisar reporte para el cliente →</a>}
     </div>
 
     <p class="mb-4 text-xs text-slate-500">
-        Las cifras se basan en visitas programadas para esta semana, no en cobros ni recorridos estimados.
+        Las cifras se basan en visitas programadas para este {periodName}, no en cobros ni recorridos estimados.
         Los cambios que aún no se han sincronizado desde un teléfono no aparecen aquí.
     </p>
 
@@ -84,7 +111,7 @@ const reviewCount = (group: typeof report.clients[number]) => group.rows.filter(
                 role="progressbar" aria-label="Visitas completadas" aria-valuemin="0" aria-valuemax="100" aria-valuenow={completionPercent}>
                 <div class="h-full rounded-full bg-emerald-600" style={`width: ${completionPercent}%`}></div>
             </div>
-            <p class="mt-2 text-sm text-slate-600">{completionPercent}% de las visitas de esta semana</p>
+            <p class="mt-2 text-sm text-slate-600">{completionPercent}% de las visitas de este {periodName}</p>
         </div>
         <div class="report-card relative overflow-hidden rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-white p-5 shadow-sm">
             <span class="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-100 text-xl text-sky-800" aria-hidden="true">◷</span>
@@ -122,14 +149,14 @@ const reviewCount = (group: typeof report.clients[number]) => group.rows.filter(
 
     {rows.length === 0 && waterTasks.length === 0 ? (
         <div class="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-600">
-            No hay visitas ni llenados registrados para esta semana. Elige otra semana para consultar el historial.
+            No hay visitas ni llenados registrados para este {periodName}. Elige otro período para consultar el historial.
         </div>
     ) : (
         <div class="space-y-6">
             {attention.length > 0 && (
                 <section class="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 sm:p-5">
-                    <h2 class="font-extrabold text-amber-950">Atención de la semana</h2>
-                    <p class="mt-1 text-sm text-amber-900">Visitas que conviene revisar antes de cerrar la semana.</p>
+                    <h2 class="font-extrabold text-amber-950">Atención del {periodName}</h2>
+                    <p class="mt-1 text-sm text-amber-900">Visitas que conviene revisar antes de cerrar el {periodName}.</p>
                     <ul class="mt-3 space-y-2 text-sm">
                         {attention.slice(0, 3).map(({ visit, property, client, incompleteTasks }) => (
                             <li>
@@ -180,7 +207,7 @@ const reviewCount = (group: typeof report.clients[number]) => group.rows.filter(
                                     <li class="flex justify-between gap-3"><span>{label}</span><strong>{report.workTypes.get(key)}</strong></li>
                                 ))}
                             </ul>
-                        ) : <p class="text-sm text-slate-500">No hay trabajos completados esta semana.</p>}
+                        ) : <p class="text-sm text-slate-500">No hay trabajos completados en este {periodName}.</p>}
                         <p class="mt-3 text-xs text-slate-500">Una visita completada puede registrar varios tipos de trabajo.</p>
                     </div>
                 </details>
@@ -199,7 +226,7 @@ const reviewCount = (group: typeof report.clients[number]) => group.rows.filter(
                                     <li class="flex justify-between gap-3"><span>{label}</span><strong>{quantity(report.productTotals.get(key)!)} {unit}</strong></li>
                                 ))}
                             </ul>
-                        ) : <p class="text-sm text-slate-500">No hay productos registrados en las visitas de esta semana.</p>}
+                        ) : <p class="text-sm text-slate-500">No hay productos registrados en las visitas de este {periodName}.</p>}
                         <p class="mt-3 text-xs text-slate-500">Cantidades registradas por visita; no equivalen a inventario ni a un cobro.</p>
                     </div>
                 </details>

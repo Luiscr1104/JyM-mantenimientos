@@ -18,6 +18,9 @@ const phoneDigits = client.phone?.replace(/\D/g, '');
 
 <PanelLayout title={client.name}>
     <PageHeader title={client.name} description="Ficha del cliente y sus propiedades.">
+        <a href={`/panel/reportes?clientId=${client.id}`} class="panel-btn panel-btn-secondary">
+            Reporte del cliente
+        </a>
         <a
             href={`/panel/clientes/${client.id}/editar`}
             class="panel-btn panel-btn-secondary"

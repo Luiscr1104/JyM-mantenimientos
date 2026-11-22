@@ -1,0 +1,109 @@
+---
+import '@/styles/global.css';
+import { buildClientReport } from '@/lib/client-report';
+import { formatCompactDate, getToday, isValidDate } from '@/lib/dates';
+import { reportRange, type ReportPeriod } from '@/lib/report-period';
+import { getClient } from '@/server/clients';
+import { getClientDeliveryData } from '@/server/reports';
+
+const clientId = Astro.url.searchParams.get('clientId');
+if (!clientId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientId)) {
+    return Astro.redirect('/panel/reportes');
+}
+const client = await getClient(clientId);
+if (!client) return Astro.redirect('/panel/reportes');
+
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+const requestedDate = Astro.url.searchParams.get('date');
+const period: ReportPeriod = Astro.url.searchParams.get('period') === 'month' ? 'month' : 'week';
+const { start, end } = reportRange(isValidDate(requestedDate) ? requestedDate : getToday(), period);
+const { rows, products } = await getClientDeliveryData(start, end, client.id);
+const visits = buildClientReport(rows, products, client.id);
+const periodLabel = `${formatCompactDate(start)} ${start.slice(0, 4)} – ${formatCompactDate(end)} ${end.slice(0, 4)}`;
+const quantity = (value: number) => value.toLocaleString('es-CR', { maximumFractionDigits: 2 });
+const backHref = `/panel/reportes?clientId=${client.id}&date=${start}&period=${period}`;
+---
+
+<!doctype html>
+<html lang="es">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="robots" content="noindex, nofollow" />
+        <title>Reporte para {client.name} · JyM Mantenimientos</title>
+    </head>
+    <body class="min-h-screen bg-slate-100 text-slate-900 antialiased">
+        <div class="print-controls mx-auto max-w-3xl px-4 pt-5">
+            <a href={backHref} class="panel-btn panel-btn-secondary">← Volver al reporte interno</a>
+            <div class="my-5 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+                <strong>Antes de compartir:</strong> revisa esta vista. Solo incluye visitas completadas,
+                pasos marcados y productos registrados de este cliente. No compartas el enlace del panel:
+                guarda el documento como PDF y envía el archivo por WhatsApp.
+            </div>
+            <button type="button" onclick="window.print()" class="panel-btn panel-btn-primary">
+                Imprimir / guardar PDF
+            </button>
+        </div>
+
+        <main class="mx-auto my-6 max-w-3xl bg-white px-5 py-8 shadow-sm sm:px-10 sm:py-10">
+            <header class="border-b border-sky-200 pb-5">
+                <div class="flex items-center gap-3">
+                    <img src="/logoJyM.png" alt="" class="h-12 w-12 object-contain" />
+                    <p class="text-sm font-extrabold text-sky-900">JyM Mantenimientos</p>
+                </div>
+                <h1 class="mt-6 text-2xl font-extrabold text-slate-900">Reporte de mantenimiento</h1>
+                <p class="mt-2 text-sm text-slate-700"><strong>Cliente:</strong> {client.name}</p>
+                <p class="mt-1 text-sm text-slate-700"><strong>Período {period === 'week' ? 'semanal' : 'mensual'}:</strong> {periodLabel}</p>
+            </header>
+
+            <section class="mt-6" aria-label="Visitas completadas">
+                <h2 class="text-base font-bold text-slate-900">Visitas completadas: {visits.length}</h2>
+                {visits.length === 0 ? (
+                    <p class="mt-4 rounded-xl border border-slate-200 p-4 text-sm text-slate-600">
+                        No hay visitas completadas registradas en este período.
+                    </p>
+                ) : (
+                    <ol class="mt-4 space-y-4">
+                        {visits.map((visit) => (
+                            <li class="break-inside-avoid rounded-xl border border-slate-200 p-4">
+                                <h3 class="font-bold text-slate-900">{visit.propertyName}</h3>
+                                <p class="mt-1 text-sm text-slate-600">{formatCompactDate(visit.date)} {visit.date.slice(0, 4)}</p>
+                                <div class="mt-3 text-sm text-slate-700">
+                                    <h4 class="font-semibold text-slate-900">Trabajos registrados</h4>
+                                    {visit.tasks.length ? (
+                                        <ul class="mt-1 list-disc space-y-1 pl-5">
+                                            {visit.tasks.map((task) => <li>{task}</li>)}
+                                        </ul>
+                                    ) : <p class="mt-1 text-slate-500">Sin pasos marcados.</p>}
+                                </div>
+                                {visit.products.length > 0 && (
+                                    <div class="mt-3 text-sm text-slate-700">
+                                        <h4 class="font-semibold text-slate-900">Productos aplicados</h4>
+                                        <ul class="mt-1 list-disc space-y-1 pl-5">
+                                            {visit.products.map((product) => (
+                                                <li>{product.name}: {quantity(product.quantity)} {product.unit}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </li>
+                        ))}
+                    </ol>
+                )}
+            </section>
+            <footer class="mt-8 border-t border-slate-200 pt-3 text-xs text-slate-500">
+                Resumen de servicios registrados. Los productos se muestran en sus unidades de aplicación.
+            </footer>
+        </main>
+    </body>
+</html>
+
+<style is:global>
+    @page { size: A4; margin: 14mm; }
+    @media print {
+        body { background: white !important; print-color-adjust: exact; }
+        .print-controls { display: none !important; }
+        main { margin: 0 !important; max-width: none !important; padding: 0 !important; box-shadow: none !important; }
+        li { break-inside: avoid; }
+    }
+</style>
