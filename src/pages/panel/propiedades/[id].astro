@@ -12,6 +12,7 @@ import WaterFillWidget from '@/components/panel/WaterFillWidget';
 import { formatDateTime } from '@/lib/format';
 import { productInfo } from '@/lib/products';
 import { formatCompactDate } from '@/lib/dates';
+import { getEwelinkPilotForProperty } from '@/server/ewelink-pilot';
 
 const id = Astro.params.id;
 if (!id) return Astro.redirect('/panel/clientes');
@@ -20,6 +21,8 @@ const data = await getPropertyWithClient(id);
 if (!data) return Astro.redirect('/panel/clientes');
 
 const { property, client } = data;
+const pilot = Astro.locals.profile?.role === 'owner'
+    ? await getEwelinkPilotForProperty(property.id) : null;
 const deletion = await getPropertyDeletionStatus(property.id);
 const plan = await getServicePlan(property.id);
 const [productHistory, waterHistory, activeWaterTask] = await Promise.all([
@@ -76,6 +79,15 @@ const accessDetails = [
 
     <div class="grid gap-4 lg:grid-cols-5">
         <div class="space-y-4 lg:col-span-2">
+            {pilot && (
+                <section class="rounded-2xl border border-sky-200 bg-white p-5 shadow-sm">
+                    <h2 class="text-base font-extrabold text-slate-900">Bomba · eWeLink</h2>
+                    <p class="mt-2 text-sm text-slate-700">{pilot.name} · {pilot.model}</p>
+                    <p class="mt-1 text-xs text-slate-600">Solo lectura; sin encendido ni apagado desde la PWA.</p>
+                    <a href={`/panel/propiedades/${property.id}/energia`}
+                        class="panel-btn panel-btn-secondary mt-3">Consultar estado y consumo</a>
+                </section>
+            )}
             <WaterFillWidget client:load
                 initial={activeWaterTask ? [{
                     id: activeWaterTask.id,

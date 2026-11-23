@@ -235,3 +235,13 @@ scripts/                 seeds de dueño y datos demo
   En la cuenta vinculada se verificó el POWR316D con UIID 190: el servidor
   devuelve `power`, `current`, `voltage`, `dayKwh` y `monthKwh`; los valores
   se muestran sin convertir hasta validar las unidades de ese protocolo.
+
+### Piloto Casa Mariposa
+
+La propiedad Casa Mariposa del cliente Bill está vinculada a «Piscina bill»
+por el ID eWeLink (clave `ewelink_pilot_device` en `settings`). Solo el dueño
+puede abrir la lectura desde la propiedad o una visita; cada consulta es manual
+y muestra la hora de solicitud, no la hora de medición del equipo. La interfaz
+no permite encender ni apagar, ni relaciona el temporizador de visitas con
+el estado real de la bomba. Antes de cualquier control físico debe revisarse
+con un electricista la instalación directa al motor y su corriente de arranque.

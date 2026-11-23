@@ -55,3 +55,17 @@ test('el diagnóstico nunca envía comandos al Sonoff y solo es accesible al due
     const callback = readFileSync('src/pages/auth/ewelink/callback.ts', 'utf8');
     assert.match(callback, /safeStateEquals/);
 });
+
+test('el piloto de Casa Mariposa usa ID persistido y solo lectura bajo demanda', () => {
+    const pilot = readFileSync('src/server/ewelink-pilot.ts', 'utf8');
+    assert.match(pilot, /mapping\.propertyId !== propertyId/);
+    assert.match(pilot, /readEwelinkDeviceStatus\(mapping\.deviceId\)/);
+    assert.doesNotMatch(pilot, /fetch\(|POST|switch.*(?:on|off)/i);
+    const reading = readFileSync('src/pages/panel/propiedades/[id]/energia.astro', 'utf8');
+    assert.match(reading, /profile\?\.role !== 'owner'/);
+    assert.match(reading, /private, no-store/);
+    assert.match(reading, /readEwelinkPilotForProperty\(data\.property\.id\)/);
+    const visit = readFileSync('src/pages/panel/visitas/[id].astro', 'utf8');
+    assert.match(visit, /getEwelinkPilotForProperty/);
+    assert.doesNotMatch(visit, /readEwelinkDeviceStatus/);
+});
