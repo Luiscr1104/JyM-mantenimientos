@@ -9,7 +9,7 @@ import { getVisitFollowUp, getVisitWithProperty, listVisitEvents } from '@/serve
 import { listVisitProducts } from '@/server/visit-products';
 import { getOpenWaterTaskForProperty } from '@/server/water-fill';
 import type { ProductKey } from '@/lib/products';
-import { getEwelinkPilotForProperty } from '@/server/ewelink-pilot';
+import { listEwelinkPropertyDevices } from '@/server/ewelink-links';
 
 const id = z.uuid().safeParse(Astro.params.id);
 if (!id.success) return Astro.redirect('/panel/agenda');
@@ -17,8 +17,8 @@ const data = await getVisitWithProperty(id.data);
 if (!data) return Astro.redirect('/panel/agenda');
 
 const { visit, property, client } = data;
-const pilot = Astro.locals.profile?.role === 'owner'
-    ? await getEwelinkPilotForProperty(property.id) : null;
+const linkedDevices = Astro.locals.profile?.role === 'owner'
+    ? await listEwelinkPropertyDevices(property.id) : [];
 const [products, waterTask, followUp, events] = await Promise.all([
     listVisitProducts(visit.id),
     getOpenWaterTaskForProperty(property.id),
@@ -39,9 +39,9 @@ const location = property.lat != null && property.lng != null
     </PageHeader>
 
     <div class="mx-auto max-w-3xl space-y-5">
-        {pilot && (
+        {linkedDevices.length > 0 && (
             <section class="rounded-2xl border border-sky-200 bg-white p-4 shadow-sm">
-                <h2 class="font-extrabold text-slate-900">Bomba · {pilot.name}</h2>
+                <h2 class="font-extrabold text-slate-900">Equipos · {linkedDevices.map((device) => device.name).join(' · ')}</h2>
                 <p class="mt-1 text-sm text-slate-600">Solo lectura. El temporizador de la visita no controla este equipo.</p>
                 <a class="panel-btn panel-btn-secondary mt-3"
                     href={`/panel/propiedades/${property.id}/energia`}>Consultar estado y consumo</a>

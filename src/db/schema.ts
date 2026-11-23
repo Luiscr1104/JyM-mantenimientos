@@ -114,6 +114,41 @@ export const settings = pgTable('settings', {
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// La cuenta eWeLink es única para JyM. Un equipo no puede pertenecer a dos propiedades.
+export const ewelinkPropertyDevices = pgTable(
+    'ewelink_property_devices',
+    {
+        id: uuid('id').primaryKey().defaultRandom(),
+        propertyId: uuid('property_id').notNull()
+            .references(() => properties.id, { onDelete: 'cascade' }),
+        deviceId: text('device_id').notNull(),
+        name: text('name').notNull(),
+        model: text('model'),
+        uiid: integer('uiid'),
+        linkedBy: uuid('linked_by').references(() => profiles.id, { onDelete: 'set null' }),
+        ...timestamps,
+    },
+    (table) => [
+        uniqueIndex('ewelink_property_devices_device_id_unique').on(table.deviceId),
+        index('ewelink_property_devices_property_id_idx').on(table.propertyId),
+    ],
+);
+
+export const ewelinkDeviceEvents = pgTable(
+    'ewelink_device_events',
+    {
+        id: uuid('id').primaryKey().defaultRandom(),
+        propertyId: uuid('property_id')
+            .references(() => properties.id, { onDelete: 'set null' }),
+        deviceId: text('device_id').notNull(),
+        name: text('name').notNull(),
+        action: text('action').notNull(),
+        actorId: uuid('actor_id').references(() => profiles.id, { onDelete: 'set null' }),
+        createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (table) => [index('ewelink_device_events_property_id_idx').on(table.propertyId)],
+);
+
 export const visits = pgTable(
     'visits',
     {

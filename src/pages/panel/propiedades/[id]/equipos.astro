@@ -1,0 +1,143 @@
+---
+import { z } from 'zod';
+import PanelLayout from '@/layouts/PanelLayout.astro';
+import PageHeader from '@/components/panel/PageHeader.astro';
+import { formatDateTime } from '@/lib/format';
+import { getPropertyWithClient } from '@/server/properties';
+import { listEwelinkDevices } from '@/server/ewelink';
+import {
+    listAllEwelinkAssignments, listEwelinkPropertyDevices, listEwelinkPropertyHistory,
+} from '@/server/ewelink-links';
+
+if (Astro.locals.profile?.role !== 'owner') return Astro.redirect('/panel');
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+Astro.response.headers.set('Referrer-Policy', 'no-referrer');
+const id = z.uuid().safeParse(Astro.params.id);
+if (!id.success) return Astro.redirect('/panel/clientes');
+const data = await getPropertyWithClient(id.data);
+if (!data) return Astro.redirect('/panel/clientes');
+const [linked, history, assigned] = await Promise.all([
+    listEwelinkPropertyDevices(data.property.id),
+    listEwelinkPropertyHistory(data.property.id),
+    listAllEwelinkAssignments(),
+]);
+let inventory: Awaited<ReturnType<typeof listEwelinkDevices>> | null = null;
+let inventoryError = '';
+try {
+    inventory = await listEwelinkDevices();
+} catch {
+    inventoryError = 'No se pudo cargar el inventario eWeLink. Inténtalo más tarde o revisa la conexión de la cuenta.';
+}
+const assignments = new Map(assigned.map((item) => [item.deviceId, item]));
+const available = inventory?.devices.filter((device) => !assignments.has(device.id)) ?? [];
+const messages: Record<string, string> = {
+    confirmation: 'Selecciona un equipo y confirma la operación.',
+    unavailable: 'El equipo ya no está disponible en esta cuenta eWeLink. Actualiza la página.',
+    assigned: 'Ese equipo ya está asignado a una propiedad. Desvincúlalo allí antes de asignarlo de nuevo.',
+    property: 'La propiedad ya no existe.',
+    missing: 'El equipo ya no estaba vinculado a esta propiedad.',
+    service: 'No se pudo completar la operación. Consulta el inventario e inténtalo de nuevo.',
+};
+const message = messages[Astro.url.searchParams.get('error') ?? ''];
+---
+
+<PanelLayout title={`Equipos eWeLink · ${data.property.alias}`}>
+    <PageHeader title={`Equipos eWeLink · ${data.property.alias}`}
+        description={`${data.client.name} · Vinculaciones de solo lectura`} />
+    <div class="mx-auto max-w-3xl space-y-4">
+        <a href={`/panel/propiedades/${data.property.id}`} class="text-sm font-semibold text-sky-800 underline">
+            ← Volver a la propiedad
+        </a>
+        <p class="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+            Vincular o desvincular solo organiza los datos en JyM. No envía órdenes al Sonoff
+            ni cambia su configuración en eWeLink.
+        </p>
+        {Astro.url.searchParams.get('ok') && (
+            <p role="status" class="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900">
+                {Astro.url.searchParams.get('ok') === 'linked' ? 'Equipo vinculado.' : 'Equipo desvinculado.'}
+            </p>
+        )}
+        {message && <p role="alert" class="rounded-xl bg-red-50 p-3 text-sm text-red-900">{message}</p>}
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 class="font-extrabold text-slate-900">Equipos de esta propiedad</h2>
+            {linked.length === 0 ? <p class="mt-3 text-sm text-slate-600">Aún no hay Sonoff vinculados.</p> : (
+                <ul class="mt-3 space-y-3">
+                    {linked.map((device) => (
+                        <li class="rounded-xl border border-slate-200 p-3 text-sm">
+                            <p class="font-semibold">{device.name} · {device.model ?? 'Modelo no indicado'}</p>
+                            <p class="text-xs text-slate-600">UIID: {device.uiid ?? 'No indicado'} · Vinculado: {formatDateTime(device.createdAt)}</p>
+                            <a class="mt-2 inline-block font-semibold text-sky-800 underline"
+                                href={`/panel/propiedades/${data.property.id}/energia?equipo=${device.id}`}>
+                                Consultar estado y consumo →
+                            </a>
+                            <form method="POST" class="mt-3 rounded-lg bg-slate-50 p-3"
+                                action={`/api/panel/properties/${data.property.id}/ewelink/${device.id}/unlink`}>
+                                <label class="flex items-start gap-2 text-xs text-slate-700">
+                                    <input type="checkbox" name="confirmation" value="DESVINCULAR" required />
+                                    Confirmo que quiero quitar {device.name} de {data.property.alias} en JyM.
+                                    Esto no apaga el equipo.
+                                </label>
+                                <button type="submit" class="mt-2 rounded-lg border border-red-300 px-3 py-2 text-sm font-bold text-red-800">
+                                    Desvincular
+                                </button>
+                            </form>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </section>
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 class="font-extrabold text-slate-900">Vincular otro equipo</h2>
+            {inventoryError && <p role="alert" class="mt-2 text-sm text-red-800">{inventoryError}</p>}
+            {inventory && (
+                <>
+                    <p class="mt-2 text-xs text-slate-600">
+                        eWeLink informa {inventory.total} elementos en la vivienda actual. Solo se muestran
+                        los equipos que esta aplicación puede consultar. Si falta uno, verifica su cuenta o vivienda.
+                    </p>
+                    {available.length ? (
+                        <form method="POST" class="mt-3 space-y-3"
+                            action={`/api/panel/properties/${data.property.id}/ewelink`}>
+                            <label class="block text-sm font-semibold text-slate-800" for="deviceId">Sonoff disponible</label>
+                            <select id="deviceId" name="deviceId" required class="w-full rounded-lg border border-slate-300 bg-white p-3 text-sm">
+                                <option value="">Seleccionar equipo…</option>
+                                {available.map((device) => (
+                                    <option value={device.id}>{device.name} · {device.model ?? 'Modelo no indicado'} · UIID {device.uiid ?? '—'}</option>
+                                ))}
+                            </select>
+                            <label class="flex items-start gap-2 text-sm text-slate-700">
+                                <input type="checkbox" name="confirmation" value="ASIGNAR" required />
+                                Vincular el equipo seleccionado a {data.property.alias} ({data.client.name}) en JyM.
+                            </label>
+                            <button type="submit" class="panel-btn panel-btn-primary">Vincular equipo</button>
+                        </form>
+                    ) : <p class="mt-3 text-sm text-slate-600">No hay más equipos disponibles para vincular.</p>}
+                </>
+            )}
+            {assigned.some((item) => item.propertyId !== data.property.id) && (
+                <div class="mt-4 border-t border-slate-200 pt-3">
+                    <h3 class="text-sm font-bold text-slate-800">Equipos ya asignados</h3>
+                    <ul class="mt-2 space-y-1 text-sm text-slate-600">
+                        {assigned.filter((item) => item.propertyId !== data.property.id).map((item) => (
+                            <li>{item.name} → <a class="text-sky-800 underline"
+                                href={`/panel/propiedades/${item.propertyId}/equipos`}>{item.propertyName}</a></li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+        </section>
+        {history.length > 0 && (
+            <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h2 class="font-extrabold text-slate-900">Historial de vínculos</h2>
+                <ul class="mt-3 space-y-2 text-xs text-slate-700">
+                    {history.map((entry) => (
+                        <li>{formatDateTime(entry.createdAt)} · {entry.name} · {
+                            entry.action === 'linked' ? 'Vinculado' :
+                            entry.action === 'unlinked' ? 'Desvinculado' : 'Piloto migrado'
+                        } · {entry.actor ?? 'Sistema'}</li>
+                    ))}
+                </ul>
+            </section>
+        )}
+    </div>
+</PanelLayout>

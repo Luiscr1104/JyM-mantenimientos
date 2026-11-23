@@ -236,12 +236,22 @@ scripts/                 seeds de dueño y datos demo
   devuelve `power`, `current`, `voltage`, `dayKwh` y `monthKwh`; los valores
   se muestran sin convertir hasta validar las unidades de ese protocolo.
 
-### Piloto Casa Mariposa
+### Vinculaciones eWeLink
 
-La propiedad Casa Mariposa del cliente Bill está vinculada a «Piscina bill»
-por el ID eWeLink (clave `ewelink_pilot_device` en `settings`). Solo el dueño
-puede abrir la lectura desde la propiedad o una visita; cada consulta es manual
-y muestra la hora de solicitud, no la hora de medición del equipo. La interfaz
-no permite encender ni apagar, ni relaciona el temporizador de visitas con
-el estado real de la bomba. Antes de cualquier control físico debe revisarse
-con un electricista la instalación directa al motor y su corriente de arranque.
+Los dueños de JyM pueden abrir una propiedad y usar «Gestionar equipos» para
+asignarle uno o varios Sonoff de la única cuenta eWeLink autorizada. Cada ID
+de dispositivo solo puede estar en una propiedad; desvincular no manda órdenes
+al dispositivo. Se registran autor y fecha de cada alta y baja. La migración
+`0011` copia el piloto «Piscina bill» a Casa Mariposa (Bill), conserva la clave
+anterior `ewelink_pilot_device` en `settings` para recuperación y activa RLS
+en las tablas nuevas. **Aplicar la migración antes del despliegue del código.**
+El inventario se consulta bajo demanda y puede requerir varias páginas (al
+menos un segundo entre llamadas); la cuota y los permisos de marca dependen
+de eWeLink. No se puede vincular un dispositivo no devuelto por esa cuenta.
+
+Solo el dueño puede abrir la lectura desde la propiedad o una visita; cada
+consulta es manual y muestra la hora de solicitud, no la hora de medición del
+equipo. La interfaz no permite encender ni apagar ni relaciona el temporizador
+de visitas con el estado real de la bomba. Antes de cualquier control físico
+de «Piscina bill» debe revisarse con un electricista su instalación directa al
+motor y la corriente de arranque.

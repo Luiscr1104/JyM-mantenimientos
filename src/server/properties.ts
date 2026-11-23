@@ -1,5 +1,5 @@
 import { asc, count, desc, eq } from 'drizzle-orm';
-import { clients, db, properties, routePlans, visitProducts, visits, waterFillTasks } from '@/db';
+import { clients, db, ewelinkPropertyDevices, properties, routePlans, visitProducts, visits, waterFillTasks } from '@/db';
 import { nullIfEmpty, type PropertyInput } from '@/lib/validation';
 import { propertyDeletionIssue } from '@/lib/property-deletion';
 
@@ -10,17 +10,19 @@ export class PropertyDeletionError extends Error {
 }
 
 export async function getPropertyDeletionStatus(propertyId: string) {
-    const [relatedVisits, product, waterTasks] = await Promise.all([
+    const [relatedVisits, product, waterTasks, linkedDevices] = await Promise.all([
         db.select().from(visits).where(eq(visits.propertyId, propertyId)),
         db.select({ id: visitProducts.id }).from(visitProducts)
             .innerJoin(visits, eq(visitProducts.visitId, visits.id))
             .where(eq(visits.propertyId, propertyId)).limit(1),
         db.select({ closedAt: waterFillTasks.closedAt }).from(waterFillTasks)
             .where(eq(waterFillTasks.propertyId, propertyId)),
+        db.select({ id: ewelinkPropertyDevices.id }).from(ewelinkPropertyDevices)
+            .where(eq(ewelinkPropertyDevices.propertyId, propertyId)).limit(1),
     ]);
     return {
         scheduledVisits: relatedVisits.length,
-        issue: propertyDeletionIssue({
+        issue: linkedDevices.length ? 'Desvincula primero los equipos eWeLink de esta propiedad.' : propertyDeletionIssue({
             visits: relatedVisits,
             hasProducts: product.length > 0,
             hasWaterTask: waterTasks.length > 0,
@@ -44,6 +46,12 @@ export async function deletePropertySafely(propertyId: string, clientId: string)
             .where(eq(visits.propertyId, propertyId)).limit(1);
         const waterTasks = await tx.select({ closedAt: waterFillTasks.closedAt }).from(waterFillTasks)
             .where(eq(waterFillTasks.propertyId, propertyId)).for('update');
+        const linkedDevices = await tx.select({ id: ewelinkPropertyDevices.id })
+            .from(ewelinkPropertyDevices).where(eq(ewelinkPropertyDevices.propertyId, propertyId))
+            .for('update');
+        if (linkedDevices.length) {
+            throw new PropertyDeletionError('Desvincula primero los equipos eWeLink de esta propiedad.');
+        }
         const issue = propertyDeletionIssue({
             visits: relatedVisits,
             hasProducts: product.length > 0,

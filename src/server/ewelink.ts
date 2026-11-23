@@ -142,13 +142,37 @@ async function accessToken(): Promise<{ region: EwelinkRegion; token: string }> 
 
 export async function listEwelinkDevices() {
     const { region, token } = await accessToken();
-    const result = await apiRequest<{ total: number; thingList: EwelinkThing[] }>(
-        region, '/v2/device/thing?lang=en&num=30', 'GET', `Bearer ${token}`,
-    );
-    if (!Array.isArray(result.thingList)) throw new EwelinkError('eWeLink no devolvió la lista de equipos.');
+    let total = 0;
+    let beginIndex: number | null = null;
+    const found = new Map<string, NonNullable<ReturnType<typeof safeDevice>>>();
+    for (let page = 0; page < 20; page++) {
+        const query = new URLSearchParams({ lang: 'en', num: '30' });
+        if (beginIndex !== null) query.set('beginIndex', String(beginIndex));
+        const result = await apiRequest<{ total: number; thingList: EwelinkThing[] }>(
+            region, `/v2/device/thing?${query}`, 'GET', `Bearer ${token}`,
+        );
+        if (!Array.isArray(result.thingList) || !Number.isInteger(result.total)) {
+            throw new EwelinkError('eWeLink no devolvió una lista de equipos válida.');
+        }
+        total = result.total;
+        for (const thing of result.thingList) {
+            const device = safeDevice(thing);
+            if (device) found.set(device.id, device);
+        }
+        // El total incluye también equipos de marcas no autorizadas por esta APPID.
+        if (result.thingList.length < 30 || found.size >= total) break;
+        const lastIndex = result.thingList.at(-1)?.index;
+        if (!Number.isInteger(lastIndex) || (beginIndex !== null && lastIndex! < beginIndex)) {
+            throw new EwelinkError('No se pudo completar la paginación de eWeLink.');
+        }
+        beginIndex = lastIndex! + 1;
+        if (page === 19) throw new EwelinkError('Demasiados equipos para mostrar en una consulta.');
+        // La API limita las llamadas consecutivas al mismo endpoint.
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
     return {
-        total: result.total,
-        devices: result.thingList.map(safeDevice).filter((row) => row !== null),
+        total,
+        devices: [...found.values()],
     };
 }
 

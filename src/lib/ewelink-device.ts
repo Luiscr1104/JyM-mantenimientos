@@ -31,6 +31,7 @@ export function safeTelemetry(value: unknown): Record<string, string | number | 
 
 export interface EwelinkThing {
     itemType: number;
+    index?: number;
     itemData?: {
         deviceid?: string; name?: string; online?: boolean; productModel?: string;
         brandName?: string; extra?: { uiid?: number }; params?: unknown;

@@ -78,6 +78,13 @@
       "when": 1795444683018,
       "tag": "0010_volatile_warbound",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795455659545,
+      "tag": "0011_lucky_shiva",
+      "breakpoints": true
     }
   ]
 }

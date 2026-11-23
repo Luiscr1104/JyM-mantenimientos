@@ -47,7 +47,7 @@ test('el POW Elite expone solo campos eléctricos y canales, nunca claves del eq
 
 test('el diagnóstico nunca envía comandos al Sonoff y solo es accesible al dueño', () => {
     const sender = readFileSync('src/server/ewelink.ts', 'utf8');
-    assert.match(sender, /'\/v2\/device\/thing\?lang=en&num=30', 'GET'/);
+    assert.match(sender, /`\/v2\/device\/thing\?\$\{query\}`, 'GET'/);
     assert.match(sender, /'GET', `Bearer \$\{token\}`/);
     assert.doesNotMatch(sender, /\/v2\/device\/thing\/status', 'POST'/);
     const page = readFileSync('src/pages/panel/ewelink.astro', 'utf8');
@@ -56,16 +56,33 @@ test('el diagnóstico nunca envía comandos al Sonoff y solo es accesible al due
     assert.match(callback, /safeStateEquals/);
 });
 
-test('el piloto de Casa Mariposa usa ID persistido y solo lectura bajo demanda', () => {
-    const pilot = readFileSync('src/server/ewelink-pilot.ts', 'utf8');
-    assert.match(pilot, /mapping\.propertyId !== propertyId/);
-    assert.match(pilot, /readEwelinkDeviceStatus\(mapping\.deviceId\)/);
-    assert.doesNotMatch(pilot, /fetch\(|POST|switch.*(?:on|off)/i);
+test('las asociaciones validan la propiedad y no incluyen órdenes al Sonoff', () => {
+    const links = readFileSync('src/server/ewelink-links.ts', 'utf8');
+    assert.match(links, /eq\(ewelinkPropertyDevices\.propertyId, propertyId\)/);
+    assert.match(links, /action: 'linked'/);
+    assert.match(links, /action: 'unlinked'/);
+    assert.doesNotMatch(links, /fetch\(|readEwelinkDeviceStatus/);
+    const assign = readFileSync('src/pages/api/panel/properties/[propertyId]/ewelink.ts', 'utf8');
+    assert.match(assign, /profile\?\.role !== 'owner'/);
+    assert.match(assign, /inventory\.devices\.find\(\(item\) => item\.id === deviceId\)/);
+    assert.match(assign, /headers\.get\('origin'\)/);
+    const unlink = readFileSync('src/pages/api/panel/properties/[propertyId]/ewelink/[linkId]/unlink.ts', 'utf8');
+    assert.match(unlink, /profile\?\.role !== 'owner'/);
+    assert.match(unlink, /confirmation'\) !== 'DESVINCULAR'/);
     const reading = readFileSync('src/pages/panel/propiedades/[id]/energia.astro', 'utf8');
     assert.match(reading, /profile\?\.role !== 'owner'/);
     assert.match(reading, /private, no-store/);
-    assert.match(reading, /readEwelinkPilotForProperty\(data\.property\.id\)/);
+    assert.match(reading, /readEwelinkDeviceStatus\(mapping\.deviceId\)/);
     const visit = readFileSync('src/pages/panel/visitas/[id].astro', 'utf8');
-    assert.match(visit, /getEwelinkPilotForProperty/);
+    assert.match(visit, /listEwelinkPropertyDevices/);
     assert.doesNotMatch(visit, /readEwelinkDeviceStatus/);
+});
+
+test('la migración conserva al piloto, impide duplicados y protege tablas nuevas con RLS', () => {
+    const migration = readFileSync('drizzle/0011_lucky_shiva.sql', 'utf8');
+    assert.match(migration, /FROM "settings" s/);
+    assert.match(migration, /s\.key = 'ewelink_pilot_device'/);
+    assert.match(migration, /device_id_unique/);
+    assert.match(migration, /ENABLE ROW LEVEL SECURITY/g);
+    assert.doesNotMatch(migration, /DELETE FROM "settings"/);
 });
