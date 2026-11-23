@@ -166,7 +166,12 @@ scripts/                 seeds de dueño y datos demo
    que el servicio push la aceptó; no que el sistema operativo la mostró.
    Después probar una llave con plazo corto y una bomba con tiempo vencido:
    ambos teléfonos deben recibir una vez cada aviso. Si solo uno falla, el
-   reintento no debe duplicarse en el otro. Desactivar uno no afecta al otro.
+    reintento no debe duplicarse en el otro. Desactivar uno no afecta al otro.
+    Tras actualizar esta versión, ejecutar `pnpm db:migrate` para crear los índices
+    del cron (`0010`) antes de verificar el rendimiento en producción. El cron
+    continúa cada minuto, pero procesa como máximo diez envíos por ejecución;
+    un aviso fallido se reintenta hasta ocho veces. Revisar los errores
+    `[push-reminder] Se agotaron los reintentos` en los logs de Vercel.
 4. Abrir **Hoy** con internet y, si hay visitas programadas para hoy, esperar
    el aviso **«Jornada lista sin internet»**: la PWA comprueba Hoy, Ruta,
    todas las visitas del día y sus recursos en ese

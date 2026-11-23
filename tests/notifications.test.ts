@@ -2,6 +2,22 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { mayReceiveNotifications } from '../src/lib/notification-policy';
+import { canRetryReminder, MAX_REMINDER_ATTEMPTS } from '../src/lib/reminder-retry';
+
+test('los avisos no se repiten después de aceptarse y los fallos tienen reintentos acotados', () => {
+    const now = new Date('2026-11-23T12:00:00Z');
+    const row = (status: string, attempts: number, secondsAgo: number) => ({
+        status, attempts, claimedAt: new Date(now.getTime() - secondsAgo * 1000),
+    });
+    assert.equal(canRetryReminder(undefined, now), true);
+    assert.equal(canRetryReminder(row('accepted', 1, 3600), now), false);
+    assert.equal(canRetryReminder(row('invalid', 1, 3600), now), false);
+    assert.equal(canRetryReminder(row('retry', 1, 59), now), false);
+    assert.equal(canRetryReminder(row('retry', 1, 60), now), true);
+    assert.equal(canRetryReminder(row('sending', 1, 119), now), false);
+    assert.equal(canRetryReminder(row('sending', 1, 120), now), true);
+    assert.equal(canRetryReminder(row('retry', MAX_REMINDER_ATTEMPTS, 3600), now), false);
+});
 
 test('Luis (dueño) y la cuenta técnica seleccionada pueden suscribirse independientemente', () => {
     assert.equal(mayReceiveNotifications('luis', 'owner', 'jose'), true);

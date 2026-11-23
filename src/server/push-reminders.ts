@@ -1,8 +1,11 @@
-import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, inArray, isNull, lt, lte, notExists, or, sql } from 'drizzle-orm';
 import * as webpush from 'web-push';
 import { VAPID_PRIVATE_KEY, VAPID_SUBJECT } from 'astro:env/server';
 import { PUBLIC_VAPID_PUBLIC_KEY } from 'astro:env/client';
 import { mayReceiveNotifications } from '@/lib/notification-policy';
+import {
+    canRetryReminder, MAX_REMINDER_ATTEMPTS, REMINDER_RETRY_AFTER_MS, REMINDER_STALE_CLAIM_MS,
+} from '@/lib/reminder-retry';
 import {
     db, profiles, properties, pushSubscriptions, reminderDeliveries, reminderDeviceDeliveries,
     settings, visits, waterFillTasks,
@@ -11,8 +14,8 @@ import {
 const JOSE_SETTING = 'jose_notification_user_id';
 const CRON_HEARTBEAT = 'notification_cron_last_run';
 const PUMP_REMINDER_MINUTES = 30;
-const RETRY_AFTER_MS = 60_000;
-const STALE_CLAIM_MS = 2 * 60_000;
+const MAX_EVENTS_PER_KIND = 10;
+const MAX_SENDS_PER_RUN = 10;
 
 export async function getNotificationUserId() {
     const [setting] = await db.select({ value: settings.value })
@@ -103,8 +106,10 @@ async function claimDelivery(kind: Kind, targetId: string, dueAt: Date, subscrip
     const claimedAt = new Date();
     const [created] = await db.insert(reminderDeviceDeliveries).values({
         kind, targetId, dueAt, subscriptionId, status: 'sending', claimedAt,
-    }).onConflictDoNothing().returning({ id: reminderDeviceDeliveries.id });
-    if (created) return created.id;
+    }).onConflictDoNothing().returning({
+        id: reminderDeviceDeliveries.id, attempts: reminderDeviceDeliveries.attempts,
+    });
+    if (created) return created;
     const [retry] = await db.update(reminderDeviceDeliveries).set({
         status: 'sending', claimedAt, updatedAt: claimedAt,
         attempts: sql`${reminderDeviceDeliveries.attempts} + 1`,
@@ -115,19 +120,22 @@ async function claimDelivery(kind: Kind, targetId: string, dueAt: Date, subscrip
         eq(reminderDeviceDeliveries.subscriptionId, subscriptionId),
         or(
             and(eq(reminderDeviceDeliveries.status, 'retry'),
-                lte(reminderDeviceDeliveries.claimedAt, new Date(claimedAt.getTime() - RETRY_AFTER_MS))),
+                lte(reminderDeviceDeliveries.claimedAt, new Date(claimedAt.getTime() - REMINDER_RETRY_AFTER_MS))),
             and(eq(reminderDeviceDeliveries.status, 'sending'),
-                lte(reminderDeviceDeliveries.claimedAt, new Date(claimedAt.getTime() - STALE_CLAIM_MS))),
+                lte(reminderDeviceDeliveries.claimedAt, new Date(claimedAt.getTime() - REMINDER_STALE_CLAIM_MS))),
         ),
-    )).returning({ id: reminderDeviceDeliveries.id });
-    return retry?.id ?? null;
+        lt(reminderDeviceDeliveries.attempts, MAX_REMINDER_ATTEMPTS),
+    )).returning({
+        id: reminderDeviceDeliveries.id, attempts: reminderDeviceDeliveries.attempts,
+    });
+    return retry ?? null;
 }
 
 async function sendToDevice(
     kind: Kind, targetId: string, dueAt: Date, title: string, body: string, path: string, device: Device,
 ) {
-    const deliveryId = await claimDelivery(kind, targetId, dueAt, device.id);
-    if (!deliveryId) return false;
+    const claim = await claimDelivery(kind, targetId, dueAt, device.id);
+    if (!claim) return false;
     try {
         await webpush.sendNotification({
             endpoint: device.endpoint, keys: { auth: device.auth, p256dh: device.p256dh },
@@ -138,26 +146,52 @@ async function sendToDevice(
         const invalid = status === 404 || status === 410;
         await db.update(reminderDeviceDeliveries).set({
             status: invalid ? 'invalid' : 'retry', updatedAt: new Date(),
-        }).where(eq(reminderDeviceDeliveries.id, deliveryId));
+        }).where(eq(reminderDeviceDeliveries.id, claim.id));
         if (invalid) {
             await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, device.id));
         } else {
             console.error('[push-reminder]', kind, targetId, device.id, status ?? 'error');
+            if (claim.attempts >= MAX_REMINDER_ATTEMPTS) {
+                console.error('[push-reminder] Se agotaron los reintentos:', kind, targetId, device.id);
+            }
         }
         return false;
     }
     await db.update(reminderDeviceDeliveries).set({ status: 'accepted', updatedAt: new Date() })
-        .where(eq(reminderDeviceDeliveries.id, deliveryId));
+        .where(eq(reminderDeviceDeliveries.id, claim.id));
     return true;
 }
 
-// Los avisos que ya envió la versión anterior no se reenvían al desplegar
-// el nuevo registro por dispositivo mientras la llave o la bomba siga abierta.
-async function sentByPreviousVersion(kind: Kind, targetId: string, dueAt: Date) {
-    const [legacy] = await db.select({ id: reminderDeliveries.id }).from(reminderDeliveries)
-        .where(and(eq(reminderDeliveries.kind, kind), eq(reminderDeliveries.targetId, targetId),
-            eq(reminderDeliveries.dueAt, dueAt))).limit(1);
-    return Boolean(legacy);
+// Filtrar en PostgreSQL antes de traer eventos: una llave abierta y ya avisada
+// no debe volver a ocupar el cupo de cada ejecución ni generar consultas N+1.
+function pendingEvent(kind: Kind, targetId: typeof waterFillTasks.id | typeof visits.id,
+    dueAt: typeof waterFillTasks.dueAt | ReturnType<typeof sql<Date>>,
+    recipientIds: string[], now: Date) {
+    const delivery = and(
+        eq(reminderDeviceDeliveries.kind, kind),
+        eq(reminderDeviceDeliveries.targetId, targetId),
+        eq(reminderDeviceDeliveries.dueAt, dueAt),
+        eq(reminderDeviceDeliveries.subscriptionId, pushSubscriptions.id),
+    );
+    const retryable = or(
+        and(eq(reminderDeviceDeliveries.status, 'retry'),
+            lte(reminderDeviceDeliveries.claimedAt, new Date(now.getTime() - REMINDER_RETRY_AFTER_MS))),
+        and(eq(reminderDeviceDeliveries.status, 'sending'),
+            lte(reminderDeviceDeliveries.claimedAt, new Date(now.getTime() - REMINDER_STALE_CLAIM_MS))),
+    );
+    return and(
+        notExists(db.select({ id: reminderDeliveries.id }).from(reminderDeliveries)
+            .where(and(eq(reminderDeliveries.kind, kind), eq(reminderDeliveries.targetId, targetId),
+                eq(reminderDeliveries.dueAt, dueAt)))),
+        exists(db.select({ id: pushSubscriptions.id }).from(pushSubscriptions)
+            .where(and(inArray(pushSubscriptions.userId, recipientIds),
+                or(
+                    notExists(db.select({ id: reminderDeviceDeliveries.id }).from(reminderDeviceDeliveries)
+                        .where(delivery)),
+                    exists(db.select({ id: reminderDeviceDeliveries.id }).from(reminderDeviceDeliveries)
+                        .where(and(delivery, lt(reminderDeviceDeliveries.attempts, MAX_REMINDER_ATTEMPTS), retryable))),
+                )))),
+    );
 }
 
 export async function deliverDueReminders() {
@@ -175,36 +209,53 @@ export async function deliverDueReminders() {
     }
 
     const now = new Date();
+    const pumpDueAt = sql<Date>`${visits.pumpStartedAt} + ${PUMP_REMINDER_MINUTES} * interval '1 minute'`;
     const water = await db.select({ task: waterFillTasks, alias: properties.alias })
         .from(waterFillTasks).innerJoin(properties, eq(waterFillTasks.propertyId, properties.id))
-        .where(and(isNull(waterFillTasks.closedAt), lte(waterFillTasks.dueAt, now)));
+        .where(and(isNull(waterFillTasks.closedAt), lte(waterFillTasks.dueAt, now),
+            pendingEvent('water', waterFillTasks.id, waterFillTasks.dueAt, recipientIds, now)))
+        .orderBy(asc(waterFillTasks.dueAt)).limit(MAX_EVENTS_PER_KIND);
     const pumps = await db.select({ visit: visits, alias: properties.alias })
         .from(visits).innerJoin(properties, eq(visits.propertyId, properties.id))
         .where(and(eq(visits.status, 'in_progress'), isNull(visits.pumpStoppedAt),
-            lte(visits.pumpStartedAt, new Date(now.getTime() - PUMP_REMINDER_MINUTES * 60_000))));
-    const waterJobs = await Promise.all(water.map(async ({ task, alias }) => {
-        if (await sentByPreviousVersion('water', task.id, task.dueAt)) return [];
-        return devices.map((device) => () =>
-            sendToDevice('water', task.id, task.dueAt, 'Revisar llave de llenado',
+            lte(visits.pumpStartedAt, new Date(now.getTime() - PUMP_REMINDER_MINUTES * 60_000)),
+            pendingEvent('pump', visits.id, pumpDueAt, recipientIds, now)))
+        .orderBy(asc(visits.pumpStartedAt)).limit(MAX_EVENTS_PER_KIND);
+    const dueIds = [...water.map(({ task }) => task.id), ...pumps.map(({ visit }) => visit.id)];
+    const attempts = dueIds.length
+        ? await db.select().from(reminderDeviceDeliveries)
+            .where(and(inArray(reminderDeviceDeliveries.targetId, dueIds),
+                inArray(reminderDeviceDeliveries.subscriptionId, devices.map((device) => device.id))))
+        : [];
+    const byEventDevice = new Map(attempts.map((row) =>
+        [`${row.kind}:${row.targetId}:${row.dueAt.getTime()}:${row.subscriptionId}`, row]));
+    const eligibleDevices = (kind: Kind, id: string, dueAt: Date) => devices.filter((device) => {
+        const row = byEventDevice.get(`${kind}:${id}:${dueAt.getTime()}:${device.id}`);
+        return canRetryReminder(row, now);
+    });
+    const jobs: Array<{ dueAt: Date; send: () => Promise<boolean> }> = [];
+    for (const { task, alias } of water) {
+        for (const device of eligibleDevices('water', task.id, task.dueAt)) jobs.push({
+            dueAt: task.dueAt,
+            send: () => sendToDevice('water', task.id, task.dueAt, 'Revisar llave de llenado',
                 `${alias}: comprueba físicamente la llave y ciérrala si corresponde.`,
-                task.visitId ? `/panel/visitas/${task.visitId}` : `/panel/propiedades/${task.propertyId}`, device));
-    }));
-    const pumpJobs = await Promise.all(pumps.map(async ({ visit, alias }) => {
-        if (!visit.pumpStartedAt) return [];
-        const dueAt = new Date(visit.pumpStartedAt.getTime() + PUMP_REMINDER_MINUTES * 60_000);
-        if (await sentByPreviousVersion('pump', visit.id, dueAt)) return [];
-        return devices.map((device) => () =>
-            sendToDevice('pump', visit.id, dueAt, 'Revisar temporizador de bomba',
-                `${alias}: verifica físicamente el estado de la bomba.`,
-                `/panel/visitas/${visit.id}`, device));
-    }));
-    const jobs = [...waterJobs.flat(), ...pumpJobs.flat()];
-    let sent = 0;
-    // Acotar peticiones push simultáneas para no agotar el proceso del cron.
-    for (let i = 0; i < jobs.length; i += 10) {
-        const results = await Promise.all(jobs.slice(i, i + 10).map((job) => job()));
-        sent += results.filter(Boolean).length;
+                task.visitId ? `/panel/visitas/${task.visitId}` : `/panel/propiedades/${task.propertyId}`, device),
+        });
     }
+    for (const { visit, alias } of pumps) {
+        if (!visit.pumpStartedAt) continue;
+        const dueAt = new Date(visit.pumpStartedAt.getTime() + PUMP_REMINDER_MINUTES * 60_000);
+        for (const device of eligibleDevices('pump', visit.id, dueAt)) jobs.push({
+            dueAt,
+            send: () => sendToDevice('pump', visit.id, dueAt, 'Revisar temporizador de bomba',
+                `${alias}: verifica físicamente el estado de la bomba.`,
+                `/panel/visitas/${visit.id}`, device),
+        });
+    }
+    jobs.sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
+    // Acotar peticiones push simultáneas para no agotar el proceso del cron.
+    const results = await Promise.all(jobs.slice(0, MAX_SENDS_PER_RUN).map((job) => job.send()));
+    const sent = results.filter(Boolean).length;
     await recordCronRun();
     return { sent };
 }

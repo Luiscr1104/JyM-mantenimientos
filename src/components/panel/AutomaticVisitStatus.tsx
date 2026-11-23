@@ -4,7 +4,8 @@ import { listEncrypted } from '@/lib/offline-storage';
 import { getToday } from '@/lib/dates';
 
 const REFRESH_INTERVAL = 5 * 60_000;
-const PREFETCH_INTERVAL = 15 * 60_000;
+const PREFETCH_INTERVAL = 60 * 60_000;
+const MAX_FAILURE_DELAY = 15 * 60_000;
 type OfflineStatus = { available: string[]; pages: boolean; ready: boolean };
 
 function workerMessage(worker: ServiceWorker, data: unknown, timeout: number): Promise<OfflineStatus | { ok: boolean }> {
@@ -65,6 +66,8 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
         let verifiedDate = '';
         let verifiedIds: string[] | null = null;
         let lastPrefetch = 0;
+        let failures = 0;
+        let updateTimer: number | undefined;
         const prefetchKey = `jym-auto-prefetch-${userId}`;
         async function update() {
             let visits: Awaited<ReturnType<typeof listLocal>>;
@@ -109,8 +112,11 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
             }
         }
         async function connected(force = false) {
+            const retryDelay = failures
+                ? Math.min(60_000 * 2 ** Math.min(failures - 1, 4), MAX_FAILURE_DELAY)
+                : 60_000;
             if (!userId || !navigator.onLine || document.hidden || running ||
-                (!force && Date.now() - lastAttempt < 60_000)) return;
+                (!force && Date.now() - lastAttempt < retryDelay)) return;
             running = true;
             if (active) setPreparing(true);
             lastAttempt = Date.now();
@@ -135,7 +141,12 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
                     const registration = existing?.active ? existing :
                         await navigator.serviceWorker.register('/sw.js', { scope: '/panel' });
                     const worker = await activeWorker(registration);
-                    const snapshot = JSON.stringify({ date: getToday(), ids });
+                    // Las visitas pueden cambiar sin cambiar la lista de IDs.
+                    // En ese caso se actualizan las páginas aunque no haya pasado una hora.
+                    const localVisits = await listLocal(userId);
+                    const byId = new Map(localVisits.map((visit) => [visit.id, visit.expectedUpdatedAt]));
+                    const snapshot = JSON.stringify({ date, ids,
+                        revisions: ids.map((id) => byId.get(id) ?? null) });
                     const previous = (() => {
                         try { return JSON.parse(localStorage.getItem(prefetchKey) ?? 'null') as {
                             snapshot: string; at: number;
@@ -160,7 +171,9 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
                 } else {
                     await prepare();
                 }
+                failures = 0;
             } catch (reason) {
+                failures++;
                 console.warn('[offline.refresh]', reason);
                 if (active) setError(`No se pudo actualizar la copia local. ${
                     reason instanceof Error ? reason.message : 'Verifica la conexión y el espacio disponible.'
@@ -173,10 +186,16 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
         }
         void update();
         if (navigator.onLine) void connected();
-        const onOnline = () => { void connected(true); };
+        const onOnline = () => { failures = 0; void connected(true); };
         const onRetry = () => { void connected(true); };
         const onFocus = () => { void connected(); };
-        const onChange = () => { void update(); };
+        const onChange = () => {
+            if (updateTimer !== undefined) window.clearTimeout(updateTimer);
+            updateTimer = window.setTimeout(() => {
+                updateTimer = undefined;
+                void update();
+            }, 100);
+        };
         window.addEventListener('online', onOnline);
         window.addEventListener('jym-prepare-now', onRetry);
         window.addEventListener('focus', onFocus);
@@ -189,6 +208,7 @@ export default function AutomaticVisitStatus({ userId }: { userId: string }) {
             window.removeEventListener('focus', onFocus);
             window.removeEventListener('jym-visits-changed', onChange);
             window.clearInterval(interval);
+            if (updateTimer !== undefined) window.clearTimeout(updateTimer);
         };
     }, [userId]);
     return (

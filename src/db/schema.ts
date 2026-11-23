@@ -142,6 +142,8 @@ export const visits = pgTable(
         index('visits_property_id_idx').on(table.propertyId),
         uniqueIndex('visits_property_date_unique').on(table.propertyId, table.scheduledFor),
         uniqueIndex('visits_follow_up_unique').on(table.followUpForVisitId),
+        index('visits_running_pump_idx').on(table.pumpStartedAt)
+            .where(sql`status = 'in_progress' AND pump_stopped_at IS NULL`),
     ],
 );
 
@@ -184,6 +186,7 @@ export const waterFillTasks = pgTable(
     (table) => [
         index('water_fill_tasks_property_id_idx').on(table.propertyId),
         index('water_fill_tasks_due_at_idx').on(table.dueAt),
+        index('water_fill_tasks_open_due_idx').on(table.dueAt).where(sql`closed_at IS NULL`),
         uniqueIndex('water_fill_tasks_one_open_per_property').on(table.propertyId).where(sql`closed_at IS NULL`),
     ],
 );
@@ -195,7 +198,7 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
     p256dh: text('p256dh').notNull(),
     auth: text('auth').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [index('push_subscriptions_user_id_idx').on(table.userId)]);
 
 export const reminderDeliveries = pgTable('reminder_deliveries', {
     id: uuid('id').primaryKey().defaultRandom(),

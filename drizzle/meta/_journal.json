@@ -71,6 +71,13 @@
       "when": 1795383737860,
       "tag": "0009_large_mathemanic",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795444683018,
+      "tag": "0010_volatile_warbound",
+      "breakpoints": true
     }
   ]
 }
