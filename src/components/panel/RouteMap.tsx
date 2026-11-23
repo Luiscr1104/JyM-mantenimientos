@@ -72,7 +72,7 @@ export default function RouteMap({ stops, base, polyline, estimated = false, hei
     const center = points[0] ?? DEFAULT_CENTER;
 
     return (
-        <div className="w-full min-w-0 overflow-hidden rounded-xl border border-slate-300">
+        <div className="relative isolate z-0 w-full min-w-0 overflow-hidden rounded-xl border border-slate-300">
             <MapContainer center={center} zoom={12} scrollWheelZoom style={{ height }}>
                 <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'

@@ -82,7 +82,7 @@ export default function MapPicker({
     }
 
     return (
-        <div>
+        <div className="relative isolate z-0">
             <div className="overflow-hidden rounded-xl border border-slate-300">
                 <MapContainer
                     center={center}
