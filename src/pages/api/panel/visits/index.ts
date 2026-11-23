@@ -21,7 +21,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
             : new Response(null, {
                 status: 303,
                 headers: {
-                    Location: `/panel/${body.returnTo === 'route' ? 'ruta' : 'agenda'}?date=${parsed.data.scheduledFor}&ok=${created ? 'visit-added' : 'visit-exists'}`,
+                    Location: `/panel/${body.returnTo === 'route' ? 'ruta' : 'agenda'}?date=${parsed.data.scheduledFor}&ok=${created ? 'visit-added' : 'visit-exists'}${body.calendar === 'month' && body.returnTo !== 'route' ? '&calendar=month' : ''}`,
                 },
             });
     } catch (error) {

@@ -69,6 +69,15 @@ Las variables `PUBLIC_*` sí llegan al navegador. El resto son solo de servidor.
 | `pnpm seed:owner` | Crear/actualizar el usuario dueño |
 | `pnpm seed:demo` | Datos de ejemplo (solo si no hay clientes) |
 
+### Agenda mensual
+
+En `/panel/agenda`, «Ver calendario mensual» permite saltar a cualquier día
+y marca cuántas visitas vigentes tiene cada fecha (las omitidas no cuentan).
+Cambiar de mes no cambia la fecha seleccionada; al tocar un día se usa esa
+fecha para el formulario habitual. La vista sigue abierta tras agregar o
+quitar visitas desde ella. El resumen mensual se obtiene en una sola consulta
+agrupada a PostgreSQL, no mediante una petición por día.
+
 ## Estructura
 
 ```

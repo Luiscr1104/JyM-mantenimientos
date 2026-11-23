@@ -14,9 +14,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
     try {
         const created = await createSuggestedVisits(date.data);
 
-        return isJsonRequest(request)
-            ? json({ ok: true, created })
-            : redirectBack(request, `/panel/agenda?date=${date.data}&ok=suggest`);
+        if (isJsonRequest(request)) return json({ ok: true, created });
+        const fallback = `/panel/agenda?date=${date.data}&ok=suggest${body.calendar === 'month' ? '&calendar=month' : ''}`;
+        return body.calendar === 'month'
+            ? new Response(null, { status: 303, headers: { Location: fallback } })
+            : redirectBack(request, fallback);
     } catch (error) {
         console.error('[visits.suggest]', error);
         return json({ error: 'No se pudieron sugerir visitas' }, 500);

@@ -1,4 +1,4 @@
-import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, count, eq, gte, lt, ne, sql } from 'drizzle-orm';
 import {
     clients,
     db,
@@ -13,6 +13,7 @@ import {
     type Visit,
 } from '@/db';
 import { matchesPreferredDay } from '@/lib/dates';
+import { addMonths } from '@/lib/agenda-calendar';
 import type { VisitInput } from '@/lib/validation';
 import { EXIT_STEPS, normalizeChecklist } from '@/lib/visit-work';
 import { completeVisit, VisitWorkError } from './visit-work';
@@ -51,6 +52,20 @@ export async function listVisitsByDate(
         .innerJoin(clients, eq(properties.clientId, clients.id))
         .where(and(...filters))
         .orderBy(asc(visits.orderIndex), asc(visits.createdAt));
+}
+
+/** Resumen de un mes en una sola consulta; excluye las visitas omitidas. */
+export async function listVisitCountsByMonth(month: string) {
+    return db.select({
+        date: visits.scheduledFor,
+        total: count(),
+    }).from(visits)
+        .where(and(
+            gte(visits.scheduledFor, `${month}-01`),
+            lt(visits.scheduledFor, `${addMonths(month, 1)}-01`),
+            ne(visits.status, 'skipped'),
+        ))
+        .groupBy(visits.scheduledFor);
 }
 
 export async function getVisitWithProperty(id: string): Promise<VisitWithProperty | null> {

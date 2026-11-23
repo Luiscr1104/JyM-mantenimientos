@@ -35,7 +35,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
             : action.data === 'delete' && date.success
                 ? new Response(null, {
                     status: 303,
-                    headers: { Location: `/panel/${body.returnTo === 'route' ? 'ruta' : 'agenda'}?date=${date.data}&ok=visit-removed` },
+                    headers: { Location: `/panel/${body.returnTo === 'route' ? 'ruta' : 'agenda'}?date=${date.data}&ok=visit-removed${body.calendar === 'month' && body.returnTo !== 'route' ? '&calendar=month' : ''}` },
                 })
                 : redirectBack(request, '/panel/agenda');
     } catch (error) {
@@ -46,7 +46,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
                 return new Response(null, {
                     status: 303,
                     headers: {
-                        Location: `/panel/agenda?date=${date.data}${body.returnTo === 'route' ? '&from=route' : ''}&error=${encodeURIComponent(error.message)}`,
+                        Location: `/panel/agenda?date=${date.data}${body.returnTo === 'route' ? '&from=route' : ''}${body.calendar === 'month' ? '&calendar=month' : ''}&error=${encodeURIComponent(error.message)}`,
                     },
                 });
             }
