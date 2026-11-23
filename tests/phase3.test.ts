@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { offlineSyncSchema } from '../src/lib/offline-visit';
+import { hasOfflinePage, isOfflinePage } from '../src/lib/offline-navigation';
 import { isObsoleteLocalVisit, syncBody, todayVisitIds, type LocalVisit } from '../src/lib/automatic-visits';
 import { emptyChecklist, getCompletionIssue } from '../src/lib/visit-work';
 
@@ -179,6 +180,35 @@ test('sin página preparada ni red se muestra un error con salida, no un spinner
     const response = await received;
     assert.equal(response.status, 503);
     assert.match(await response.text(), /Esta página no está disponible sin conexión/);
+});
+
+test('sin red las secciones no preparadas permanecen en la pantalla actual', async () => {
+    const date = '2026-11-23';
+    const visit = '/panel/visitas/a8aff1e6-7759-494c-9423-6a6a3fbd2e26';
+    const saved = new Set(['/panel', '/panel/ruta', visit, '/panel/agenda']);
+    const read = async (path: string) => path === '/panel/offline-ready'
+        ? new Response(JSON.stringify({ date })) : saved.has(path) ? new Response('Preparada') : undefined;
+    for (const path of ['/panel/agenda', '/panel/reportes', '/panel/clientes',
+        '/panel/ajustes', '/panel/leads', '/panel/sin-conexion']) {
+        assert.equal(isOfflinePage(path), false);
+        assert.equal(await hasOfflinePage(path, '', date, read), false);
+    }
+    assert.equal(await hasOfflinePage('/panel', '', date, read), true);
+    assert.equal(await hasOfflinePage('/panel/ruta', `?date=${date}`, date, read), true);
+    assert.equal(await hasOfflinePage(visit, '', date, read), true);
+    assert.equal(await hasOfflinePage(`${visit}/editar`, '', date, read), false);
+    assert.equal(await hasOfflinePage(visit, '?otro=1', date, read), false);
+    assert.equal(await hasOfflinePage('/panel/ruta', '?date=2026-11-22', date, read), false);
+    assert.equal(await hasOfflinePage('/panel', '?otro=1', date, read), false);
+    assert.equal(await hasOfflinePage('/panel/ruta', '', date,
+        async (path) => path === '/panel/offline-ready'
+            ? new Response(JSON.stringify({ date: '2026-11-22' })) : read(path)), false);
+    assert.equal(await hasOfflinePage('/panel/ruta', '', date,
+        async (path) => path === '/panel/ruta' ? undefined : read(path)), false);
+    const layout = readFileSync('src/layouts/PanelLayout.astro', 'utf8');
+    assert.match(layout, /event\.preventDefault\(\);\s*void \(async \(\) =>/);
+    assert.match(layout, /showOfflineNotice\(\)/);
+    assert.match(layout, /method: 'HEAD', cache: 'no-store'/);
 });
 
 test('Ruta no presenta el recorrido de otro día cuando falta red', async () => {

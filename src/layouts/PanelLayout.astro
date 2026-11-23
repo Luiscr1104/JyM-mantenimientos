@@ -55,6 +55,10 @@ const isActive = (href: string, exact: boolean) =>
             <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-200 border-t-sky-700 align-middle" aria-hidden="true"></span>
             <span class="ml-2" data-message>Abriendo página…</span>
         </div>
+        <p id="panel-offline-notice" role="status" aria-live="polite"
+            class="fixed inset-x-4 bottom-24 z-50 mx-auto hidden max-w-sm rounded-xl border border-amber-200 bg-white px-4 py-3 text-center text-sm font-semibold text-slate-800 shadow-lg lg:bottom-6">
+            Esta sección necesita conexión. Sigues en la misma pantalla.
+        </p>
         <div class="lg:flex lg:min-h-screen">
             <!-- Sidebar escritorio -->
             <aside
@@ -186,6 +190,8 @@ const isActive = (href: string, exact: boolean) =>
         <script>
             import { clearOfflineData, listEncrypted } from '@/lib/offline-storage';
             import { clearAutomaticVisits, listLocal } from '@/lib/automatic-visits';
+            import { getToday } from '@/lib/dates';
+            import { hasOfflinePage, isOfflinePage } from '@/lib/offline-navigation';
             const userId = document.querySelector('main')?.getAttribute('data-user-id');
             if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
@@ -215,8 +221,16 @@ const isActive = (href: string, exact: boolean) =>
             const navigation = document.querySelector<HTMLElement>('#panel-navigation-status')!;
             const message = navigation.querySelector<HTMLElement>('[data-message]')!;
             const connection = document.querySelector<HTMLElement>('#panel-connection-status')!;
+            const offlineNotice = document.querySelector<HTMLElement>('#panel-offline-notice')!;
             let slowTimer: number | undefined;
+            let noticeTimer: number | undefined;
+            let navigationAttempt = 0;
             let pendingPath = '';
+            const showOfflineNotice = () => {
+                offlineNotice.classList.remove('hidden');
+                window.clearTimeout(noticeTimer);
+                noticeTimer = window.setTimeout(() => offlineNotice.classList.add('hidden'), 5_000);
+            };
             const showLoading = (text: string) => {
                 message.textContent = text;
                 navigation.classList.remove('hidden');
@@ -241,6 +255,16 @@ const isActive = (href: string, exact: boolean) =>
             window.addEventListener('offline', connectionChanged);
             window.addEventListener('pageshow', resetLoading);
             window.addEventListener('pagehide', resetLoading);
+            const canReachSite = async () => {
+                try {
+                    // HEAD no lo intercepta el service worker: prueba la red real,
+                    // incluso si navigator.onLine sigue diciendo «conectado».
+                    const response = await fetch('/sw.js', {
+                        method: 'HEAD', cache: 'no-store', signal: AbortSignal.timeout(4_000),
+                    });
+                    return response.ok && response.headers.get('content-type')?.includes('javascript') === true;
+                } catch { return false; }
+            };
             document.addEventListener('click', (event) => {
                 if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey ||
                     event.shiftKey || event.altKey) return;
@@ -249,7 +273,32 @@ const isActive = (href: string, exact: boolean) =>
                     link.origin !== window.location.origin ||
                     (link.pathname === window.location.pathname && link.search === window.location.search &&
                         link.hash)) return;
+                const attempt = ++navigationAttempt;
                 if (pendingPath === link.href) { event.preventDefault(); return; }
+                if (link.pathname === '/panel' || link.pathname.startsWith('/panel/')) {
+                    event.preventDefault();
+                    void (async () => {
+                        let saved = false;
+                        if (isOfflinePage(link.pathname)) {
+                            try {
+                                saved = await hasOfflinePage(link.pathname, link.search, getToday(),
+                                    (path) => caches.match(path));
+                            } catch { /* Si falla la caché, comprobar la conexión. */ }
+                        }
+                        const available = saved || (navigator.onLine && await canReachSite());
+                        if (attempt !== navigationAttempt) return;
+                        if (!available) {
+                            resetLoading();
+                            showOfflineNotice();
+                            return;
+                        }
+                        offlineNotice.classList.add('hidden');
+                        pendingPath = link.href;
+                        showLoading(link.pathname === '/panel' ? 'Abriendo Hoy…' : 'Abriendo página…');
+                        window.location.assign(link.href);
+                    })();
+                    return;
+                }
                 pendingPath = link.href;
                 if (link.pathname.startsWith('/panel/')) showLoading('Abriendo página…');
                 else if (link.pathname === '/panel') showLoading('Abriendo Hoy…');
