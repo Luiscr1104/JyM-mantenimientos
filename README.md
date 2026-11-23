@@ -51,6 +51,7 @@ El panel queda en <http://localhost:4321/panel>.
 | `GOOGLE_MAPS_API_KEY` | Fase 2 | Rutas optimizadas |
 | `PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Fase 3 | Notificaciones push |
 | `VAPID_SUBJECT` / `CRON_SECRET` | Fase 3 | Contacto VAPID y autorización del programador |
+| `EWELINK_APP_ID` / `EWELINK_APP_SECRET` | Diagnóstico eWeLink | Solo servidor; configurar también en Vercel Production |
 
 Las variables `PUBLIC_*` sí llegan al navegador. El resto son solo de servidor.
 
@@ -210,7 +211,27 @@ scripts/                 seeds de dueño y datos demo
    cambios pendientes; comprobar en las visitas que el servidor refleja el trabajo.
    Ante conflicto o error, conservar los datos locales y revisarlos antes de borrar
    copias o cerrar sesión.
-5. Repetir con la red muy lenta: comprobar el aviso «Abriendo página…», que no se
+ 5. Repetir con la red muy lenta: comprobar el aviso «Abriendo página…», que no se
    pueda enviar el mismo formulario varias veces y que una página preparada se abra
-   sin quedar esperando la red indefinidamente. Google Maps, seguimientos y tareas
-   de llaves de llenado requieren conexión; utilizar una alarma independiente.
+     sin quedar esperando la red indefinidamente. Google Maps, seguimientos y tareas
+     de llaves de llenado requieren conexión; utilizar una alarma independiente.
+
+## Diagnóstico eWeLink (solo lectura)
+
+- Registrar en eWeLink Developer el callback exacto
+  `https://jymmantenimientos.com/auth/ewelink/callback`.
+- Configurar `EWELINK_APP_ID` y `EWELINK_APP_SECRET` en Vercel Production
+  (además de `.env.local`). Solo el dueño puede abrir `/panel/ewelink` y
+  autorizar la cuenta desde el dominio canónico.
+- La autorización vincula una única cuenta eWeLink al panel; sus tokens se
+  almacenan cifrados en PostgreSQL y no se envían al navegador. Se consulta
+  manualmente el inventario de la vivienda actual (máximo 30 elementos) y,
+  a petición del dueño, los campos de estado/consumo que realmente devuelva
+  la API. No hay comandos de encendido/apagado ni sondeo periódico.
+- La API oficial recomienda dejar al menos un segundo entre llamadas y el
+  APPID gratuito tiene una cuota regional. Si no se muestran datos de consumo,
+  no inferir que el dispositivo carece de ellos: pueden depender del UIID,
+  del permiso de la app o de la actualización de sus datos.
+  En la cuenta vinculada se verificó el POWR316D con UIID 190: el servidor
+  devuelve `power`, `current`, `voltage`, `dayKwh` y `monthKwh`; los valores
+  se muestran sin convertir hasta validar las unidades de ese protocolo.

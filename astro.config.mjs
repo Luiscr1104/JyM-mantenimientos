@@ -45,6 +45,8 @@ export default defineConfig({
             PUBLIC_VAPID_PUBLIC_KEY: envField.string({ context: 'client', access: 'public', optional: true }),
             VAPID_PRIVATE_KEY: envField.string({ context: 'server', access: 'secret', optional: true }),
             VAPID_SUBJECT: envField.string({ context: 'server', access: 'secret', optional: true }),
+            EWELINK_APP_ID: envField.string({ context: 'server', access: 'secret', optional: true }),
+            EWELINK_APP_SECRET: envField.string({ context: 'server', access: 'secret', optional: true }),
         },
     },
 });

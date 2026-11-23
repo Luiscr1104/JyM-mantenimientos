@@ -40,6 +40,11 @@ const error = Astro.url.searchParams.get('error');
 
         <div class="space-y-4">
             <InstallApp client:load />
+            {Astro.locals.profile?.role === 'owner' && (
+                <a href="/panel/ewelink" class="block rounded-2xl border border-slate-200 bg-white p-5 text-sm font-bold text-sky-800 underline shadow-sm">
+                    Diagnóstico eWeLink · solo lectura →
+                </a>
+            )}
             <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h2 class="text-base font-extrabold text-slate-900">Cuenta</h2>
                 <p class="mt-1 text-xs font-bold uppercase tracking-wide text-slate-400">
