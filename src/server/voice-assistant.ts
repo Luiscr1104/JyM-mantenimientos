@@ -349,7 +349,8 @@ async function prepareReadRequest(action: ReadAction, target: string, text: stri
         userId, action, date: selection.mode === 'date' ? selection.date : today,
         from: scope?.from ?? today, to: scope?.to ?? today,
         selection: selection.mode === 'date' ? 'date' as const
-            : selection.mode === 'previous' ? 'previous' as const : 'latest' as const,
+            : selection.mode === 'previous' && action !== 'visit_compare'
+                ? 'previous' as const : 'latest' as const,
         candidateIds: [] as string[], attempts: 0, expires: Date.now() + 5 * 60_000,
     };
     const matches = findPropertyMatches(await listPropertiesWithClient(), target);

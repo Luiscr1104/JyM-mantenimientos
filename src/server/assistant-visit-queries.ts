@@ -95,9 +95,14 @@ export async function readProperty(action: Exclude<ReadAction, 'today_briefing'>
             .filter(({ product }) => product === 'granulated_chlorine' || product === 'chlorine_tablet');
         const month = new Intl.DateTimeFormat('es-CR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
             .format(new Date(`${from}T12:00:00Z`));
+        const recorded = dates.filter(({ id }) => products.some(({ visitId }) => visitId === id))
+            .sort((a, b) => a.scheduledFor.localeCompare(b.scheduledFor));
+        const breakdown = recorded.slice(0, 6).map(({ id, scheduledFor }) =>
+            `${spokenDate(scheduledFor)}: ${productSummary(products.filter(({ visitId }) => visitId === id))}`);
         return { message: products.length
             ? `Para ${property.alias} en ${month}, hasta ${spokenDate(to)}: ${productSummary(products)} ` +
-                `en ${new Set(products.map(({ visitId }) => visitId)).size} visitas registradas. Los cambios sin sincronizar podrían faltar.`
+                `en ${recorded.length} visitas registradas. Por visita: ${breakdown.join('; ')}` +
+                `${recorded.length > 6 ? `; y ${recorded.length - 6} más` : ''}. Los cambios sin sincronizar podrían faltar.`
             : `No encuentro cloro registrado para ${property.alias} en ${month}, hasta ${spokenDate(to)}. ` +
                 'La falta de registro no demuestra que no se haya aplicado; puede faltar sincronización.' };
     }

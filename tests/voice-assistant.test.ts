@@ -165,6 +165,7 @@ test('las seis consultas de lectura preservan propiedad y solo leen registros', 
     assert.match(server, /userId, propertyId: row\.property\.id, date: result\.date/);
     assert.match(server, /continueRead\(text, userId, contextToken\.slice\(2\)\)/);
     assert.match(server, /continueClarification\(text, userId, contextToken\)/);
+    assert.match(server, /selection\.mode === 'previous' && action !== 'visit_compare'/);
     assert.match(ui, /contextRef\.current = answer\.contextToken \?\? null/);
     assert.match(queries, /eq\(personalReminders\.userId, userId\)/);
     assert.match(queries, /productSummary\(products\)/);
