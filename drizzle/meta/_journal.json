@@ -85,6 +85,20 @@
       "when": 1795455659545,
       "tag": "0011_lucky_shiva",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1795555648815,
+      "tag": "0012_striped_brood",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795555913371,
+      "tag": "0013_tricky_mesmero",
+      "breakpoints": true
     }
   ]
 }

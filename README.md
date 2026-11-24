@@ -52,6 +52,7 @@ El panel queda en <http://localhost:4321/panel>.
 | `PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Fase 3 | Notificaciones push |
 | `VAPID_SUBJECT` / `CRON_SECRET` | Fase 3 | Contacto VAPID y autorización del programador |
 | `EWELINK_APP_ID` / `EWELINK_APP_SECRET` | Diagnóstico eWeLink | Solo servidor; configurar también en Vercel Production |
+| `GROQ_API_KEY` | Asistente de voz | Solo servidor; configurar también en Vercel Production |
 
 Las variables `PUBLIC_*` sí llegan al navegador. El resto son solo de servidor.
 
@@ -224,6 +225,72 @@ scripts/                 seeds de dueño y datos demo
    pueda enviar el mismo formulario varias veces y que una página preparada se abra
      sin quedar esperando la red indefinidamente. Google Maps, seguimientos y tareas
      de llaves de llenado requieren conexión; utilizar una alarma independiente.
+
+## Asistente de voz del panel
+
+- Configurar `GROQ_API_KEY` en `.env.local` para desarrollo y en las variables de
+  entorno de **Vercel Production** para probar la PWA desplegada. No usar
+  `PUBLIC_` ni compartir la clave con el navegador.
+- Desde el panel autenticado, tocar el **micrófono flotante**, permitir el micrófono y grabar
+  una frase de hasta 20 segundos. El teléfono necesita HTTPS e internet. La
+  PWA graba en el formato disponible (MP4 en iPhone o WebM en otros navegadores)
+  y envía el audio a Groq Whisper; no se guarda el audio en el panel.
+- Luis (foto `/agent.png`) entiende «Crear una visita para hoy en la casa de Bill»,
+  «mañana», «pasado mañana», «el viernes» o «el 3 de diciembre». Calcula
+  la fecha en Costa Rica, no crea visitas pasadas y dice el día concreto antes
+  de exigir «sí, confirmo». Una fecha pasada sin año o ambigua requiere
+  repetir la petición con una fecha clara. También responde consultas como
+  «¿Se le puso cloro a Olga esta semana?», «la semana pasada», «hace tres semanas»
+  o «la semana del 12 de octubre del 2025». Las semanas van de lunes a domingo.
+  Si hay varios clientes con el mismo nombre, conserva la pregunta, la fecha
+  y las propiedades candidatas mientras se aclara cuál de ellas es: se puede
+  responder con el alias o «opción uno», «opción dos», etc.
+  No muestra la transcripción: intenta hablar automáticamente con la voz del
+  teléfono y después abrir el micrófono para la siguiente respuesta. Prioriza
+  voces masculinas conocidas en español y permite elegir entre las voces
+  instaladas. El navegador no informa el género: si el teléfono no ofrece
+  una voz masculina española, hay que instalarla o elegir otra manualmente.
+  Si iOS bloquea el audio o el micrófono, tocar el altavoz o micrófono como respaldo.
+  La escucha se detiene tras silencio, al cerrar la ventana o al pasar la
+  aplicación a segundo plano; no hay escucha permanente.
+  La visita **no se crea** hasta escuchar la propuesta y decir claramente
+  «sí, confirmo»; «cancelar» descarta la propuesta.
+  Un «sí» aislado no confirma nada. Si hay varios inmuebles para el nombre
+  indicado, pide especificar el alias o el número de opción.
+- «Inicia la visita de Olga» solo propone una visita programada hoy y registra
+  la llegada después de «sí, confirmo». «Cierra la visita» revisa cada tarea y
+  los tres pasos de salida pendientes: solo «hecho» acredita cada paso; si
+  alguno está pendiente, no cierra. Al final vuelve a pedir confirmación; una
+  bomba registrada en marcha bloquea el cierre. Requiere conexión.
+- «Recuérdame comprar concentrado para Negro» propone un recordatorio personal
+  para hoy, sin alarma si no se indicó hora. «Recuérdame ... mañana a las 4 de
+  la tarde» lo programa con hora de Costa Rica; tras «sí, confirmo» aparece
+  solo en el «Hoy» de quien lo creó y puede marcarse como hecho. Con los avisos
+  activados, el cron intentará enviar una notificación solo a los dispositivos
+  de esa cuenta; no sustituye una alarma del teléfono.
+- «Semana pasada» significa lunes a domingo previos en horario de Costa Rica;
+  se consulta el registro de productos asociado a las visitas programadas de
+  esas fechas. La ausencia de registro no demuestra que no se aplicó producto:
+  un dispositivo podría tener trabajo sin sincronizar.
+- Consultas habladas de solo lectura: «Resume la visita de Olga de hoy»,
+  «¿Qué pasó en la visita anterior de Olga?» o «la del 20 de noviembre»;
+  «¿Qué me falta hoy?» (visitas, pasos de salida, recordatorios propios y llaves
+  abiertas); «¿Qué quedó pendiente en Olga?»; «Compara las últimas dos visitas
+  de Olga»; «¿Cuánto cloro se registró este mes para Olga?» (pastillas y gramos
+  por separado); «¿Cuánto tiempo estuvimos en Bill esta semana?».
+  Ante propiedades ambiguas ofrece opciones numeradas y conserva la pregunta.
+  Tras un resumen admite «¿y en la anterior?» o «¿y qué quedó pendiente?» sin
+  repetir el nombre; el contexto caduca tras cinco minutos o al cerrar.
+  Solo informa de datos guardados: la ausencia de registro o de horas no prueba
+  que el trabajo no se haya hecho, y no incluye cambios aún sin sincronizar.
+- En el iPhone de Luis: abrir la PWA instalada, probar la captura, respuesta
+  hablada y reapertura automática del micrófono; después confirmar una visita
+  de prueba diciendo «sí, confirmo» y comprobar la agenda. Probar también
+  «cancelar», un «sí» aislado, una consulta de cloro con registro conocido esta
+  semana, una aclaración de propiedad ambigua con «opción dos», una visita
+  futura y otra ya programada, la voz masculina y la falta de conexión.
+  Repetir las pruebas de voz en el Android de José. No
+  escucha en segundo plano ni controla equipos físicos.
 
 ## Diagnóstico eWeLink (solo lectura)
 

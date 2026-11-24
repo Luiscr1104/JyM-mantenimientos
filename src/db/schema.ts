@@ -235,9 +235,23 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index('push_subscriptions_user_id_idx').on(table.userId)]);
 
+export const personalReminders = pgTable('personal_reminders', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    requestId: uuid('request_id').unique(),
+    userId: uuid('user_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    dueDate: date('due_date').notNull(),
+    dueAt: timestamp('due_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    ...timestamps,
+}, (table) => [
+    index('personal_reminders_user_due_idx').on(table.userId, table.dueDate),
+    index('personal_reminders_push_due_idx').on(table.dueAt).where(sql`completed_at IS NULL`),
+]);
+
 export const reminderDeliveries = pgTable('reminder_deliveries', {
     id: uuid('id').primaryKey().defaultRandom(),
-    kind: text('kind').$type<'water' | 'pump'>().notNull(),
+    kind: text('kind').$type<'water' | 'pump' | 'personal'>().notNull(),
     targetId: uuid('target_id').notNull(),
     dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -247,7 +261,7 @@ export const reminderDeliveries = pgTable('reminder_deliveries', {
 // no vuelve a enviar el mismo recordatorio a quien ya lo recibió.
 export const reminderDeviceDeliveries = pgTable('reminder_device_deliveries', {
     id: uuid('id').primaryKey().defaultRandom(),
-    kind: text('kind').$type<'water' | 'pump'>().notNull(),
+    kind: text('kind').$type<'water' | 'pump' | 'personal'>().notNull(),
     targetId: uuid('target_id').notNull(),
     dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
     subscriptionId: uuid('subscription_id').notNull(),

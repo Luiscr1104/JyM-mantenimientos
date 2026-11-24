@@ -1,6 +1,6 @@
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { db, properties, routePlans, visitEvents, visits } from '@/db';
-import { getCompletionIssue, normalizeChecklist } from '@/lib/visit-work';
+import { EXIT_STEPS, getCompletionIssue, normalizeChecklist, tasksForTypes } from '@/lib/visit-work';
 import type { z } from 'zod';
 import type { visitWorkInputSchema } from '@/lib/validation';
 
@@ -94,4 +94,28 @@ export async function completeVisit(id: string, actorId?: string) {
         await db.delete(routePlans).where(eq(routePlans.visitDate, row.scheduledFor));
     }
     return row;
+}
+
+/** Completar solo pasos atestiguados uno a uno en un contexto firmado; nunca encender/apagar equipos. */
+export async function completeVisitByVoice(id: string, actorId: string, checkedKeys: string[]) {
+    const result = await db.transaction(async (tx) => {
+        const [current] = await tx.select().from(visits).where(eq(visits.id, id)).for('update');
+        if (!current || current.status !== 'in_progress') throw new VisitWorkError('La visita ya no está en curso.');
+        const required = [...tasksForTypes(current.workTypes), ...EXIT_STEPS].map(({ key }) => key);
+        if (checkedKeys.some((key) => !required.includes(key as typeof required[number])) ||
+            new Set(checkedKeys).size !== checkedKeys.length) throw new VisitWorkError('Pasos inválidos.');
+        const checklist = normalizeChecklist(current.checklist);
+        for (const key of checkedKeys as Array<keyof typeof checklist>) checklist[key] = true;
+        const issue = getCompletionIssue(checklist, current.pendingReason,
+            Boolean(current.pumpStartedAt && !current.pumpStoppedAt), current.workTypes);
+        if (issue) throw new VisitWorkError(issue);
+        const now = new Date();
+        const [row] = await tx.update(visits).set({
+            checklist, status: 'completed', completedAt: now, leftAt: now, updatedAt: now,
+        }).where(eq(visits.id, id)).returning();
+        await tx.insert(visitEvents).values({ visitId: id, kind: 'departure', occurredAt: now, actorId });
+        return row;
+    });
+    await db.delete(routePlans).where(eq(routePlans.visitDate, result.scheduledFor));
+    return result;
 }

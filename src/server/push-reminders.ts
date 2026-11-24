@@ -1,4 +1,4 @@
-import { and, asc, eq, exists, inArray, isNull, lt, lte, notExists, or, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, inArray, isNull, lt, lte, notExists, or, sql, type SQL } from 'drizzle-orm';
 import * as webpush from 'web-push';
 import { VAPID_PRIVATE_KEY, VAPID_SUBJECT } from 'astro:env/server';
 import { PUBLIC_VAPID_PUBLIC_KEY } from 'astro:env/client';
@@ -7,7 +7,7 @@ import {
     canRetryReminder, MAX_REMINDER_ATTEMPTS, REMINDER_RETRY_AFTER_MS, REMINDER_STALE_CLAIM_MS,
 } from '@/lib/reminder-retry';
 import {
-    db, profiles, properties, pushSubscriptions, reminderDeliveries, reminderDeviceDeliveries,
+    db, personalReminders, profiles, properties, pushSubscriptions, reminderDeliveries, reminderDeviceDeliveries,
     settings, visits, waterFillTasks,
 } from '@/db';
 
@@ -98,7 +98,7 @@ export async function sendTestNotification(userId: string, endpoint: string): Pr
 }
 
 type Device = typeof pushSubscriptions.$inferSelect;
-type Kind = 'water' | 'pump';
+type Kind = 'water' | 'pump' | 'personal';
 
 // La combinación evento/dispositivo es única. Otro cron puede reclamar un
 // intento fallido o atascado, pero jamás uno ya aceptado por el servicio push.
@@ -164,9 +164,9 @@ async function sendToDevice(
 
 // Filtrar en PostgreSQL antes de traer eventos: una llave abierta y ya avisada
 // no debe volver a ocupar el cupo de cada ejecución ni generar consultas N+1.
-function pendingEvent(kind: Kind, targetId: typeof waterFillTasks.id | typeof visits.id,
-    dueAt: typeof waterFillTasks.dueAt | ReturnType<typeof sql<Date>>,
-    recipientIds: string[], now: Date) {
+function pendingEvent(kind: Kind, targetId: typeof waterFillTasks.id | typeof visits.id | typeof personalReminders.id,
+    dueAt: typeof waterFillTasks.dueAt | typeof personalReminders.dueAt | ReturnType<typeof sql<Date>>,
+    recipients: string[] | SQL, now: Date) {
     const delivery = and(
         eq(reminderDeviceDeliveries.kind, kind),
         eq(reminderDeviceDeliveries.targetId, targetId),
@@ -184,7 +184,8 @@ function pendingEvent(kind: Kind, targetId: typeof waterFillTasks.id | typeof vi
             .where(and(eq(reminderDeliveries.kind, kind), eq(reminderDeliveries.targetId, targetId),
                 eq(reminderDeliveries.dueAt, dueAt)))),
         exists(db.select({ id: pushSubscriptions.id }).from(pushSubscriptions)
-            .where(and(inArray(pushSubscriptions.userId, recipientIds),
+            .where(and(Array.isArray(recipients)
+                ? inArray(pushSubscriptions.userId, recipients) : recipients,
                 or(
                     notExists(db.select({ id: reminderDeviceDeliveries.id }).from(reminderDeviceDeliveries)
                         .where(delivery)),
@@ -197,16 +198,12 @@ function pendingEvent(kind: Kind, targetId: typeof waterFillTasks.id | typeof vi
 export async function deliverDueReminders() {
     configurePush();
     const recipientIds = await getNotificationRecipientIds();
-    if (!recipientIds.length) {
-        await recordCronRun();
-        return { sent: 0, reason: 'No hay cuentas autorizadas para recibir avisos.' };
-    }
-    const devices = await db.select().from(pushSubscriptions)
-        .where(inArray(pushSubscriptions.userId, recipientIds));
+    const devices = await db.select().from(pushSubscriptions);
     if (!devices.length) {
         await recordCronRun();
         return { sent: 0, reason: 'Ningún dispositivo tiene avisos activados.' };
     }
+    const sharedDevices = devices.filter((device) => recipientIds.includes(device.userId));
 
     const now = new Date();
     const pumpDueAt = sql<Date>`${visits.pumpStartedAt} + ${PUMP_REMINDER_MINUTES} * interval '1 minute'`;
@@ -221,7 +218,13 @@ export async function deliverDueReminders() {
             lte(visits.pumpStartedAt, new Date(now.getTime() - PUMP_REMINDER_MINUTES * 60_000)),
             pendingEvent('pump', visits.id, pumpDueAt, recipientIds, now)))
         .orderBy(asc(visits.pumpStartedAt)).limit(MAX_EVENTS_PER_KIND);
-    const dueIds = [...water.map(({ task }) => task.id), ...pumps.map(({ visit }) => visit.id)];
+    const personal = await db.select().from(personalReminders)
+        .where(and(isNull(personalReminders.completedAt), lte(personalReminders.dueAt, now),
+            pendingEvent('personal', personalReminders.id, personalReminders.dueAt,
+                eq(pushSubscriptions.userId, personalReminders.userId), now)))
+        .orderBy(asc(personalReminders.dueAt)).limit(MAX_EVENTS_PER_KIND);
+    const dueIds = [...water.map(({ task }) => task.id), ...pumps.map(({ visit }) => visit.id),
+        ...personal.map((reminder) => reminder.id)];
     const attempts = dueIds.length
         ? await db.select().from(reminderDeviceDeliveries)
             .where(and(inArray(reminderDeviceDeliveries.targetId, dueIds),
@@ -229,13 +232,13 @@ export async function deliverDueReminders() {
         : [];
     const byEventDevice = new Map(attempts.map((row) =>
         [`${row.kind}:${row.targetId}:${row.dueAt.getTime()}:${row.subscriptionId}`, row]));
-    const eligibleDevices = (kind: Kind, id: string, dueAt: Date) => devices.filter((device) => {
+    const eligibleDevices = (kind: Kind, id: string, dueAt: Date, recipients: Device[]) => recipients.filter((device) => {
         const row = byEventDevice.get(`${kind}:${id}:${dueAt.getTime()}:${device.id}`);
         return canRetryReminder(row, now);
     });
     const jobs: Array<{ dueAt: Date; send: () => Promise<boolean> }> = [];
     for (const { task, alias } of water) {
-        for (const device of eligibleDevices('water', task.id, task.dueAt)) jobs.push({
+        for (const device of eligibleDevices('water', task.id, task.dueAt, sharedDevices)) jobs.push({
             dueAt: task.dueAt,
             send: () => sendToDevice('water', task.id, task.dueAt, 'Revisar llave de llenado',
                 `${alias}: comprueba físicamente la llave y ciérrala si corresponde.`,
@@ -245,11 +248,20 @@ export async function deliverDueReminders() {
     for (const { visit, alias } of pumps) {
         if (!visit.pumpStartedAt) continue;
         const dueAt = new Date(visit.pumpStartedAt.getTime() + PUMP_REMINDER_MINUTES * 60_000);
-        for (const device of eligibleDevices('pump', visit.id, dueAt)) jobs.push({
+        for (const device of eligibleDevices('pump', visit.id, dueAt, sharedDevices)) jobs.push({
             dueAt,
             send: () => sendToDevice('pump', visit.id, dueAt, 'Revisar temporizador de bomba',
                 `${alias}: verifica físicamente el estado de la bomba.`,
                 `/panel/visitas/${visit.id}`, device),
+        });
+    }
+    for (const reminder of personal) {
+        if (!reminder.dueAt) continue;
+        for (const device of eligibleDevices('personal', reminder.id, reminder.dueAt,
+            devices.filter((item) => item.userId === reminder.userId))) jobs.push({
+            dueAt: reminder.dueAt,
+            send: () => sendToDevice('personal', reminder.id, reminder.dueAt!,
+                'Mi recordatorio', reminder.title, '/panel', device),
         });
     }
     jobs.sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());

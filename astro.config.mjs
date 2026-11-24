@@ -47,6 +47,7 @@ export default defineConfig({
             VAPID_SUBJECT: envField.string({ context: 'server', access: 'secret', optional: true }),
             EWELINK_APP_ID: envField.string({ context: 'server', access: 'secret', optional: true }),
             EWELINK_APP_SECRET: envField.string({ context: 'server', access: 'secret', optional: true }),
+            GROQ_API_KEY: envField.string({ context: 'server', access: 'secret', optional: true }),
         },
     },
 });

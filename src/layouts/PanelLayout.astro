@@ -2,6 +2,7 @@
 import '@/styles/global.css';
 import { Home, Users, Inbox, Settings, LogOut, Route, CalendarDays, ChartColumn } from 'lucide-react';
 import AutomaticVisitStatus from '@/components/panel/AutomaticVisitStatus';
+import VoiceConversation from '@/components/panel/VoiceConversation';
 
 interface Props {
     title: string;
@@ -187,6 +188,7 @@ const isActive = (href: string, exact: boolean) =>
                 </nav>
             </div>
         </div>
+        <VoiceConversation client:load />
         <script>
             import { clearOfflineData, listEncrypted } from '@/lib/offline-storage';
             import { clearAutomaticVisits, listLocal } from '@/lib/automatic-visits';
