@@ -16,6 +16,7 @@ const URI_KEY = 'jym-voice-uri';
 const NAME_KEY = 'jym-voice-name';
 const LANG_KEY = 'jym-voice-lang';
 const READY_KEY = 'jym-piper-ready';
+const TRANSCRIPT_KEY = 'jym-voice-debug-transcript';
 const CHOICES: VoiceChoice[] = ['davefx', 'carlfm', 'device'];
 
 // Davefx es la voz masculina por defecto en todos los teléfonos.
@@ -121,5 +122,21 @@ export function markPiperReady(choice: VoiceChoice): void {
 export function clearPiperReady(): void {
     try {
         localStorage.removeItem(READY_KEY);
+    } catch { /* Sin almacenamiento. */ }
+}
+
+// Diagnóstico opcional: muestra en el asistente la frase que entendió Whisper.
+export function transcriptDebugEnabled(): boolean {
+    try {
+        return localStorage.getItem(TRANSCRIPT_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+export function writeTranscriptDebug(enabled: boolean): void {
+    try {
+        if (enabled) localStorage.setItem(TRANSCRIPT_KEY, '1');
+        else localStorage.removeItem(TRANSCRIPT_KEY);
     } catch { /* Sin almacenamiento. */ }
 }

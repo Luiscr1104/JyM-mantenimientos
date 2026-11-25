@@ -1,5 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { GROQ_API_KEY } from 'astro:env/server';
+import { GROQ_API_KEY, GROQ_TRANSCRIBE_MODEL } from 'astro:env/server';
 import { and, asc, eq, gte, inArray, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, properties, visitProducts, visits } from '@/db';
@@ -14,6 +14,7 @@ import {
     requestedWeek, spokenDate, spokenWeek, voiceConfirmation,
     type VoiceIntent,
 } from '@/lib/voice-assistant';
+import { buildTranscriptionPrompt, reviewTranscription, type TranscriptionResult } from '@/lib/voice-transcription';
 import { listPropertiesWithClient } from './properties';
 import { createMyReminder } from './personal-reminders';
 import { applyVisitAction, createVisit, getVisitWithProperty, listVisitsByDate } from './visits';
@@ -74,6 +75,8 @@ const readContextSchema = z.object({
 });
 
 const GROQ_URL = 'https://api.groq.com/openai/v1';
+// large-v3 transcribe algo mejor los nombres; se puede volver a turbo sin tocar código.
+const TRANSCRIBE_MODEL = GROQ_TRANSCRIBE_MODEL?.trim() || 'whisper-large-v3';
 
 export class AssistantError extends Error {
     constructor(message: string, public status = 400) { super(message); }
@@ -113,15 +116,30 @@ export async function transcribeAudio(file: File) {
     if (!extension || file.size < 100 || file.size > 2_000_000) {
         throw new AssistantError('Audio no válido. Graba una frase de hasta 20 segundos (máximo 2 MB).');
     }
+    let prompt = buildTranscriptionPrompt([]);
+    try {
+        // Los alias y clientes ayudan a escribir bien los nombres; si falla la
+        // consulta, la transcripción sigue funcionando con el vocabulario base.
+        prompt = buildTranscriptionPrompt(await listPropertiesWithClient());
+    } catch (error) {
+        console.error('[voice.prompt]', error);
+    }
     const form = new FormData();
     form.append('file', file, `comando.${extension}`);
-    form.append('model', 'whisper-large-v3-turbo');
+    form.append('model', TRANSCRIBE_MODEL);
     form.append('language', 'es');
-    form.append('response_format', 'json');
-    const result = await groqResponse('/audio/transcriptions', { method: 'POST', body: form }) as { text?: unknown };
-    const text = typeof result.text === 'string' ? result.text.trim().slice(0, 400) : '';
-    if (!text) throw new AssistantError('No se entendió la grabación. Inténtalo de nuevo.');
-    return text;
+    form.append('prompt', prompt);
+    form.append('response_format', 'verbose_json');
+    form.append('temperature', '0');
+    const result = await groqResponse('/audio/transcriptions', { method: 'POST', body: form }) as TranscriptionResult;
+    const review = reviewTranscription(result);
+    if (review.kind === 'empty') {
+        throw new AssistantError('No te escuché. Acércate al micrófono y vuelve a intentarlo.', 422);
+    }
+    if (review.kind === 'unclear') {
+        throw new AssistantError('No entendí bien la frase. Repítela un poco más despacio, por favor.', 422);
+    }
+    return review.text;
 }
 
 export async function interpretSpeech(text: string): Promise<VoiceIntent> {

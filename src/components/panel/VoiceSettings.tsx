@@ -5,7 +5,8 @@ import { piperPlayer } from '@/lib/piper-player';
 import { PIPER_DOWNLOAD_MB, PIPER_LABEL } from '@/lib/piper-protocol';
 import {
     DEFAULT_VOICE_SETTINGS, piperReady, readVoiceSettings, resolveVoice, selectDeviceVoice,
-    voiceLabel, writeVoiceSettings, type VoiceChoice, type VoiceSettings,
+    transcriptDebugEnabled, voiceLabel, writeTranscriptDebug, writeVoiceSettings,
+    type VoiceChoice, type VoiceSettings,
 } from '@/lib/voice-settings';
 
 const sample = 'Hola, soy Luis. Te ayudaré con las visitas y los recordatorios.';
@@ -18,6 +19,7 @@ export default function VoiceSettings() {
     const [testing, setTesting] = React.useState(false);
     const [progress, setProgress] = React.useState('');
     const [notice, setNotice] = React.useState('');
+    const [debugTranscript, setDebugTranscript] = React.useState(false);
     const testRun = React.useRef(0);
 
     React.useEffect(() => {
@@ -25,6 +27,7 @@ export default function VoiceSettings() {
         setSettings(initial);
         setReady(piperReady(initial.choice));
         setVoices(listSpanishVoices());
+        setDebugTranscript(transcriptDebugEnabled());
         const update = () => setVoices(listSpanishVoices());
         window.speechSynthesis?.addEventListener('voiceschanged', update);
         const onHide = () => piperPlayer.dispose();
@@ -225,6 +228,24 @@ export default function VoiceSettings() {
                     La voz guardada ya no está en este teléfono. Elige otra de la lista.
                 </p>
             )}
+
+            <label className="mt-4 flex items-start gap-2 rounded-xl border border-slate-200 px-3 py-2">
+                <input
+                    type="checkbox"
+                    checked={debugTranscript}
+                    onChange={(event) => {
+                        setDebugTranscript(event.target.checked);
+                        writeTranscriptDebug(event.target.checked);
+                    }}
+                    className="mt-0.5 h-4 w-4"
+                />
+                <span className="text-xs text-slate-600">
+                    <strong className="block text-slate-700">Mostrar la frase que entiende el asistente</strong>
+                    Diagnóstico opcional: el asistente muestra el texto transcrito antes de responder.
+                    Se guarda solo en este teléfono.
+                </span>
+            </label>
+
             {notice && <p role="status" className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">{notice}</p>}
         </section>
     );

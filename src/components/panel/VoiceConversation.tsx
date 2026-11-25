@@ -4,9 +4,10 @@ import { voiceConfirmation } from '@/lib/voice-assistant';
 import { listSpanishVoices, primeDeviceSpeech, speakDeviceVoice, speechSupported } from '@/lib/device-voice';
 import { piperPlayer } from '@/lib/piper-player';
 import { PIPER_DOWNLOAD_MB, PIPER_LABEL } from '@/lib/piper-protocol';
+import { createVoiceActivity } from '@/lib/voice-activity';
 import {
-    DEFAULT_VOICE_SETTINGS, piperReady, readVoiceSettings, resolveVoice, writeVoiceSettings,
-    type VoiceSettings,
+    DEFAULT_VOICE_SETTINGS, piperReady, readVoiceSettings, resolveVoice, transcriptDebugEnabled,
+    writeVoiceSettings, type VoiceSettings,
 } from '@/lib/voice-settings';
 
 type Answer = {
@@ -17,7 +18,17 @@ type Answer = {
 };
 type Phase = 'idle' | 'starting' | 'recording' | 'processing' | 'speaking';
 
+type VoiceDetection = {
+    heardSpeech: boolean;
+    frames: number;
+    unavailable: boolean;
+    canSendOnTimeout: () => boolean;
+};
+
 const audioTypes = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
+const MAX_LISTEN_MS = 12_000;
+const MAX_RECORDING_MS = 20_000;
+const MIN_RECORDING_MS = 400;
 
 async function postJson(url: string, body: unknown): Promise<Answer> {
     const response = await fetch(url, {
@@ -40,12 +51,16 @@ export default function VoiceConversation() {
     const [settings, setSettings] = React.useState<VoiceSettings>(DEFAULT_VOICE_SETTINGS);
     const [deviceLabel, setDeviceLabel] = React.useState('');
     const [needsSetup, setNeedsSetup] = React.useState(false);
+    const [transcript, setTranscript] = React.useState('');
     const settingsRef = React.useRef<VoiceSettings>(DEFAULT_VOICE_SETTINGS);
+    const debugRef = React.useRef(false);
     const recorderRef = React.useRef<MediaRecorder | null>(null);
     const streamRef = React.useRef<MediaStream | null>(null);
     const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const autoTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const stopDetectorRef = React.useRef<(() => void) | null>(null);
+    const detectorAudioRef = React.useRef<AudioContext | null>(null);
+    const recordStartedRef = React.useRef(0);
     const deviceCancelRef = React.useRef<(() => void) | null>(null);
     const sessionRef = React.useRef(0);
     const speechRef = React.useRef(0);
@@ -70,6 +85,29 @@ export default function VoiceConversation() {
         streamRef.current = null;
     }
 
+    /**
+     * Un solo AudioContext para el analizador, creado dentro del gesto del
+     * usuario. En iOS, crear uno por turno deja contextos suspendidos y la
+     * primera escucha termina sin muestras.
+     */
+    function detectorContext(): AudioContext | null {
+        const AudioContextClass = window.AudioContext;
+        if (!AudioContextClass) return null;
+        let audio = detectorAudioRef.current;
+        if (!audio || audio.state === 'closed') {
+            try { audio = new AudioContextClass(); } catch { return null; }
+            detectorAudioRef.current = audio;
+        }
+        if (audio.state === 'suspended') void audio.resume().catch(() => {});
+        return audio;
+    }
+
+    function closeDetector() {
+        const audio = detectorAudioRef.current;
+        detectorAudioRef.current = null;
+        if (audio) void audio.close().catch(() => {});
+    }
+
     function stopSpeech() {
         speechRef.current++;
         if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
@@ -89,6 +127,8 @@ export default function VoiceConversation() {
         previewSpeechRef.current = null;
         stopRecording();
         stopSpeech();
+        closeDetector();
+        setTranscript('');
         setNeedsSetup(false);
         setPhase('idle');
         setOpen(false);
@@ -98,9 +138,10 @@ export default function VoiceConversation() {
         const initial = readVoiceSettings();
         settingsRef.current = initial;
         setSettings(initial);
+        debugRef.current = transcriptDebugEnabled();
         setDeviceLabel(resolveVoice(listSpanishVoices(), initial)?.name ?? '');
         const onHidden = () => { if (document.visibilityState === 'hidden') close(); };
-        const onPageHide = () => piperPlayer.dispose();
+        const onPageHide = () => { piperPlayer.dispose(); closeDetector(); };
         document.addEventListener('visibilitychange', onHidden);
         window.addEventListener('pagehide', onPageHide);
         return () => {
@@ -110,6 +151,7 @@ export default function VoiceConversation() {
             sessionRef.current++;
             stopRecording();
             stopSpeech();
+            closeDetector();
         };
     }, []);
 
@@ -272,10 +314,15 @@ export default function VoiceConversation() {
         }
     }
 
-    async function sendAudio(blob: Blob, mimeType: string, session: number) {
+    async function sendAudio(blob: Blob, mimeType: string, session: number, elapsed = 0) {
         if (!activeRef.current || sessionRef.current !== session) return;
-        if (blob.size < 100 || blob.size > 2_000_000) {
-            speak('La grabación quedó vacía o es demasiado larga. Vuelve a intentarlo.', undefined, false, true);
+        if (elapsed < MIN_RECORDING_MS || blob.size < 100) {
+            // Los audios muy cortos suelen producir frases inventadas.
+            speak('No te escuché. Toca el micrófono y habla un poco más cerca.', undefined, false, true);
+            return;
+        }
+        if (blob.size > 2_000_000) {
+            speak('La grabación es demasiado larga. Vuelve a intentarlo.', undefined, false, true);
             return;
         }
         setPhase('processing');
@@ -289,7 +336,11 @@ export default function VoiceConversation() {
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error ?? 'No se pudo transcribir tu voz.');
-            if (activeRef.current && sessionRef.current === session) await handleSpeech(data.text, session);
+            const text = typeof data.text === 'string' ? data.text.trim() : '';
+            if (!text) throw new Error('No te escuché. Vuelve a intentarlo.');
+            if (!activeRef.current || sessionRef.current !== session) return;
+            if (debugRef.current) setTranscript(text);
+            await handleSpeech(text, session);
         } catch (reason) {
             if (activeRef.current && sessionRef.current === session) {
                 speak(reason instanceof Error ? reason.message : 'No pude escuchar tu frase. Inténtalo de nuevo.', undefined, false, true);
@@ -297,40 +348,39 @@ export default function VoiceConversation() {
         }
     }
 
-    function watchForSilence(stream: MediaStream, recorder: MediaRecorder, session: number) {
-        const AudioContextClass = window.AudioContext;
-        if (!AudioContextClass) return null;
-        let audio: AudioContext;
-        try { audio = new AudioContextClass(); } catch { return null; }
-        if (audio.state === 'suspended') void audio.resume().catch(() => {});
-        const source = audio.createMediaStreamSource(stream);
+    function watchForSilence(stream: MediaStream, recorder: MediaRecorder, session: number): VoiceDetection | null {
+        const audio = detectorContext();
+        if (!audio) return null;
+        let source: MediaStreamAudioSourceNode;
+        try { source = audio.createMediaStreamSource(stream); } catch { return null; }
         const analyser = audio.createAnalyser();
         analyser.fftSize = 1024;
         source.connect(analyser);
         const samples = new Uint8Array(analyser.fftSize);
+        const activity = createVoiceActivity();
+        const detection: VoiceDetection = {
+            heardSpeech: false,
+            frames: 0,
+            unavailable: audio.state !== 'running',
+            canSendOnTimeout: () => activity.canSendOnTimeout(detection.unavailable),
+        };
+        const onState = () => { if (audio.state !== 'running') detection.unavailable = true; };
+        audio.addEventListener('statechange', onState);
         let frame = 0;
-        let speechStarted = 0;
-        let lastLoud = 0;
-        let loudSince = 0;
-        const detected = { heardSpeech: false };
         const check = () => {
             if (!activeRef.current || sessionRef.current !== session || recorder.state !== 'recording') return;
+            if (audio.state !== 'running') {
+                detection.unavailable = true;
+                frame = requestAnimationFrame(check);
+                return;
+            }
             analyser.getByteTimeDomainData(samples);
             let energy = 0;
             for (const sample of samples) energy += ((sample - 128) / 128) ** 2;
-            const loud = Math.sqrt(energy / samples.length) > 0.02;
-            const now = performance.now();
-            if (loud) {
-                if (!loudSince) loudSince = now;
-                if (!speechStarted && now - loudSince > 120) {
-                    speechStarted = now;
-                    detected.heardSpeech = true;
-                }
-                if (speechStarted) lastLoud = now;
-            } else {
-                loudSince = 0;
-            }
-            if (speechStarted && now - speechStarted > 450 && now - lastLoud > 1_300) {
+            const decision = activity.update(Math.sqrt(energy / samples.length), performance.now());
+            detection.heardSpeech = activity.heardSpeech;
+            detection.frames = activity.frames;
+            if (decision === 'finish') {
                 recorder.stop();
                 return;
             }
@@ -339,11 +389,11 @@ export default function VoiceConversation() {
         frame = requestAnimationFrame(check);
         stopDetectorRef.current = () => {
             cancelAnimationFrame(frame);
+            audio.removeEventListener('statechange', onState);
             source.disconnect();
             analyser.disconnect();
-            void audio.close().catch(() => {});
         };
-        return detected;
+        return detection;
     }
 
     async function startRecording(preservePrime = false, automatic = false) {
@@ -361,8 +411,17 @@ export default function VoiceConversation() {
         setPhase('starting');
         setStatus('Activando micrófono');
         const session = sessionRef.current;
+        if (automatic) detectorContext();
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // Mono y filtros del teléfono: el audio llega más limpio a Whisper.
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    channelCount: 1,
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                },
+            });
             if (!activeRef.current || sessionRef.current !== session) {
                 stream.getTracks().forEach((track) => track.stop());
                 return;
@@ -370,7 +429,7 @@ export default function VoiceConversation() {
             streamRef.current = stream;
             const mimeType = audioTypes.find((type) => MediaRecorder.isTypeSupported(type));
             if (!mimeType) throw new Error('Este teléfono no permite grabar en un formato compatible.');
-            const recorder = new MediaRecorder(stream, { mimeType });
+            const recorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 96_000 });
             const chunks: BlobPart[] = [];
             recorderRef.current = recorder;
             recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
@@ -382,30 +441,30 @@ export default function VoiceConversation() {
             };
             recorder.onstop = () => {
                 const blob = new Blob(chunks, { type: recorder.mimeType || mimeType });
+                const elapsed = performance.now() - recordStartedRef.current;
                 stopRecording();
-                void sendAudio(blob, blob.type, session);
+                void sendAudio(blob, blob.type, session, elapsed);
             };
             recorder.start();
+            recordStartedRef.current = performance.now();
             setPhase('recording');
-            setStatus('Grabando');
+            setStatus(automatic ? 'Te escucho…' : 'Grabando');
             const detection = automatic ? watchForSilence(stream, recorder, session) : null;
-            if (automatic && !detection) {
-                stopRecording();
-                setPhase('idle');
-                setStatus('Toca el micrófono para hablar: este dispositivo no admite escucha automática.');
-                return;
-            }
             timerRef.current = setTimeout(() => {
                 if (recorder.state !== 'recording') return;
-                if (automatic) {
-                    if (detection?.heardSpeech) recorder.stop();
-                    else {
-                        stopRecording();
-                        setPhase('idle'); // Sin voz: no gastar cuota ni escuchar indefinidamente.
-                        setStatus('Luis espera una nueva petición');
-                    }
-                } else recorder.stop();
-            }, automatic ? 12_000 : 20_000);
+                if (!automatic) {
+                    recorder.stop();
+                    return;
+                }
+                // Si el analizador no pudo muestrear (iOS suspendido), se envía
+                // igual: es la primera frase y no hay que perderla.
+                if (!detection || detection.canSendOnTimeout()) recorder.stop();
+                else {
+                    stopRecording();
+                    setPhase('idle');
+                    setStatus('No te escuché. Toca el micrófono cuando quieras hablar.');
+                }
+            }, automatic ? MAX_LISTEN_MS : MAX_RECORDING_MS);
         } catch (reason) {
             stopRecording();
             if (activeRef.current && sessionRef.current === session) {
@@ -419,7 +478,7 @@ export default function VoiceConversation() {
     function beginListening() {
         if (settingsRef.current.choice === 'device') primeSpeech();
         else piperPlayer.unlock();
-        void startRecording(true);
+        void startRecording(true, true);
     }
 
     function downloadVoice() {
@@ -427,6 +486,7 @@ export default function VoiceConversation() {
         if (choice === 'device') return;
         const session = sessionRef.current;
         piperPlayer.unlock();
+        detectorContext();
         setNeedsSetup(false);
         setNeedsReplay(false);
         setPhase('starting');
@@ -438,7 +498,7 @@ export default function VoiceConversation() {
             if (!activeRef.current || sessionRef.current !== session) return;
             piperPlayer.speak('Hola, soy Luis. Te ayudaré con las visitas y los recordatorios.', choice, {
                 onStart: () => { if (sessionRef.current === session) setPhase('speaking'); },
-                onEnd: () => { if (activeRef.current && sessionRef.current === session) void startRecording(true); },
+                onEnd: () => { if (activeRef.current && sessionRef.current === session) void startRecording(true, true); },
                 onError: (error) => {
                     if (!activeRef.current || sessionRef.current !== session) return;
                     setNeedsSetup(true);
@@ -470,6 +530,7 @@ export default function VoiceConversation() {
         const initial = readVoiceSettings();
         settingsRef.current = initial;
         setSettings(initial);
+        debugRef.current = transcriptDebugEnabled();
         setDeviceLabel(resolveVoice(listSpanishVoices(), initial)?.name ?? '');
         activeRef.current = true;
         sessionRef.current++;
@@ -479,6 +540,7 @@ export default function VoiceConversation() {
         previewSpeechRef.current = null;
         lastSpokenRef.current = null;
         setHasAnswer(false);
+        setTranscript('');
         setNeedsReplay(false);
         setStatus('');
         setOpen(true);
@@ -536,6 +598,12 @@ export default function VoiceConversation() {
                         className={`mx-auto mb-3 min-h-[1rem] max-w-xs text-xs ${needsReplay ? 'text-amber-800' : 'text-slate-600'}`}>
                         {status}
                     </p>
+
+                    {transcript && (
+                        <p className="mx-auto mb-3 max-w-xs rounded-lg bg-slate-50 px-3 py-2 text-left text-xs text-slate-600">
+                            <span className="font-semibold text-slate-700">Escuché:</span> «{transcript}»
+                        </p>
+                    )}
 
                     {needsSetup ? <div className="mx-auto mb-2 max-w-xs rounded-xl border border-sky-200 bg-sky-50 p-3 text-left">
                         <p className="text-xs font-bold text-sky-900">Preparar la voz masculina</p>

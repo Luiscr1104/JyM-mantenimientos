@@ -7,6 +7,8 @@ import {
 } from '../src/lib/voice-assistant';
 import { preferredSpanishVoice } from '../src/lib/voice-preferences';
 import { resolveVoice } from '../src/lib/voice-settings';
+import { createVoiceActivity } from '../src/lib/voice-activity';
+import { buildTranscriptionPrompt, reviewTranscription } from '../src/lib/voice-transcription';
 import { splitSentences } from '../src/lib/piper-player';
 import { reminderSchedule } from '../src/lib/personal-reminders';
 import { monthForQuestion, pastVisitSelection, visitMinutes, weekForDuration } from '../src/lib/assistant-visit-read';
@@ -246,4 +248,139 @@ test('la voz Piper se cachea en el teléfono y usa recursos locales', () => {
     assert.match(worker, /'--input', JSON\.stringify\(\[\{ text \}\]\)/);
     assert.match(player, /splitSentences/);
     assert.match(player, /markPiperReady/);
+});
+
+test('el detector corta tras 1,3 s de silencio y perdona el ruido inicial', () => {
+    const feed = (activity: ReturnType<typeof createVoiceActivity>, rms: number,
+        from: number, to: number, step = 50) => {
+        let decision: 'listen' | 'finish' = 'listen';
+        for (let now = from; now <= to; now += step) decision = activity.update(rms, now);
+        return decision;
+    };
+
+    const phrase = createVoiceActivity();
+    assert.equal(feed(phrase, 0.08, 0, 800), 'listen');
+    assert.equal(phrase.heardSpeech, true);
+    assert.equal(phrase.canSendOnTimeout(), true);
+    assert.equal(feed(phrase, 0.001, 850, 2050), 'listen');
+    assert.equal(feed(phrase, 0.001, 2100, 2100), 'finish');
+
+    // Un golpe al abrir el micrófono no inicia la frase ni provoca un corte.
+    const transient = createVoiceActivity();
+    assert.equal(feed(transient, 0.2, 0, 100), 'listen');
+    assert.equal(feed(transient, 0.001, 150, 3_000), 'listen');
+    assert.equal(transient.heardSpeech, false);
+    assert.equal(transient.canSendOnTimeout(false), false);
+});
+
+test('el detector acepta tiempo cero y respeta la gracia inicial', () => {
+    const activity = createVoiceActivity();
+    activity.update(0.08, 0);
+    activity.update(0.08, 119);
+    assert.equal(activity.heardSpeech, false);
+    activity.update(0.08, 120);
+    assert.equal(activity.heardSpeech, true);
+    activity.update(0.08, 800);
+    assert.equal(activity.update(0, 2099), 'listen');
+    assert.equal(activity.update(0, 2100), 'finish');
+
+    // Con un silencio más corto, la gracia sigue impidiendo un corte temprano.
+    const grace = createVoiceActivity({ speechStartMs: 0, minSpeechMs: 100, silenceMs: 200 });
+    grace.update(0.08, 0);
+    assert.equal(grace.update(0, 300), 'listen');
+    assert.equal(grace.update(0, 1199), 'listen');
+    assert.equal(grace.update(0, 1200), 'finish');
+});
+
+test('el ruido continuo no corta la escucha; el silencio total no gasta la cuota', () => {
+    const feed = (activity: ReturnType<typeof createVoiceActivity>, rms: number,
+        from: number, to: number, step = 50) => {
+        let decision: 'listen' | 'finish' = 'listen';
+        for (let now = from; now <= to; now += step) decision = activity.update(rms, now);
+        return decision;
+    };
+
+    const noise = createVoiceActivity();
+    assert.equal(feed(noise, 0.2, 0, 5_000), 'listen');
+    assert.equal(noise.heardSpeech, true);
+    assert.equal(feed(noise, 0.001, 5_050, 6_300), 'finish');
+
+    const silent = createVoiceActivity();
+    assert.equal(feed(silent, 0.001, 0, 12_000), 'listen');
+    assert.equal(silent.heardSpeech, false);
+    assert.equal(silent.canSendOnTimeout(false), false);
+    assert.equal(silent.frames, 241);
+
+    // Sin muestras (AudioContext suspendido en iOS) sí se envía el audio.
+    const unsampled = createVoiceActivity();
+    assert.equal(unsampled.canSendOnTimeout(), true);
+    unsampled.update(0.001, 0);
+    assert.equal(unsampled.canSendOnTimeout(false), false);
+    assert.equal(unsampled.canSendOnTimeout(true), true);
+});
+
+test('el prompt de Whisper incluye alias y se corta entre nombres completos', () => {
+    const prompt = buildTranscriptionPrompt(properties);
+    assert.match(prompt, /Bill Smith/);
+    assert.match(prompt, /Casa Mariposa \(Bill\)/);
+    assert.match(prompt, /sí confirmo/);
+    assert.equal(new Set(prompt.split('Nombres: ')[1].replace(/\.$/, '').split(', ')).size, 5);
+
+    const many = Array.from({ length: 200 }, (_, index) => ({
+        property: { alias: `Casa ${index}` },
+        client: { name: `Cliente ${index}` },
+    }));
+    const capped = buildTranscriptionPrompt(many);
+    assert.ok(capped.length <= 520);
+    assert.ok(capped.endsWith('.'));
+    const expectedNames = new Set(many.flatMap(({ property, client }) => [client.name, property.alias]));
+    for (const name of capped.split('Nombres: ')[1].slice(0, -1).split(', ')) {
+        assert.ok(expectedNames.has(name), `Nombre incompleto: ${name}`);
+    }
+});
+
+test('descarta silencio y pide repetir cuando Whisper no está seguro', () => {
+    assert.deepEqual(reviewTranscription({
+        text: '  sí   confirmo ',
+        segments: [{ text: 'sí confirmo', no_speech_prob: 0.1, avg_logprob: -0.3, compression_ratio: 1.2 }],
+    }), { kind: 'ok', text: 'sí confirmo' });
+
+    assert.equal(reviewTranscription({ text: '', segments: [] }).kind, 'empty');
+    assert.equal(reviewTranscription({
+        text: 'Hola, ¿en qué puedo ayudarte?',
+        segments: [{ text: 'Hola', no_speech_prob: 0.92, avg_logprob: -2, compression_ratio: 1 }],
+    }).kind, 'empty');
+    assert.equal(reviewTranscription({
+        text: 'visita de Olga',
+        segments: [{ text: 'visita de Olga', no_speech_prob: 0.2, avg_logprob: -1.5, compression_ratio: 1 }],
+    }).kind, 'unclear');
+    assert.equal(reviewTranscription({
+        text: 'crear visita para Olga sí confirmo',
+        segments: [
+            { text: 'crear visita para Olga', no_speech_prob: 0.1, avg_logprob: -0.2 },
+            { text: 'sí confirmo', no_speech_prob: 0.9, avg_logprob: -0.2 },
+        ],
+    }).kind, 'unclear');
+    assert.equal(reviewTranscription({
+        text: 'sí sí sí sí',
+        segments: [{ text: 'sí sí sí sí', no_speech_prob: 0.2, avg_logprob: -0.2, compression_ratio: 3.1 }],
+    }).kind, 'unclear');
+});
+
+test('la primera escucha usa silencio y el audio se prepara para Whisper', () => {
+    const ui = readFileSync('src/components/panel/VoiceConversation.tsx', 'utf8');
+    const server = readFileSync('src/server/voice-assistant.ts', 'utf8');
+    const settings = readFileSync('src/components/panel/VoiceSettings.tsx', 'utf8');
+    assert.match(ui, /startRecording\(true, true\)/);
+    assert.match(ui, /createVoiceActivity/);
+    assert.match(ui, /echoCancellation: true/);
+    assert.match(ui, /noiseSuppression: true/);
+    assert.match(ui, /audioBitsPerSecond: 96_000/);
+    assert.match(ui, /canSendOnTimeout/);
+    assert.match(ui, /transcriptDebugEnabled/);
+    assert.match(server, /buildTranscriptionPrompt/);
+    assert.match(server, /response_format', 'verbose_json'/);
+    assert.match(server, /reviewTranscription/);
+    assert.match(server, /GROQ_TRANSCRIBE_MODEL/);
+    assert.match(settings, /writeTranscriptDebug/);
 });

@@ -53,6 +53,7 @@ El panel queda en <http://localhost:4321/panel>.
 | `VAPID_SUBJECT` / `CRON_SECRET` | Fase 3 | Contacto VAPID y autorización del programador |
 | `EWELINK_APP_ID` / `EWELINK_APP_SECRET` | Diagnóstico eWeLink | Solo servidor; configurar también en Vercel Production |
 | `GROQ_API_KEY` | Asistente de voz | Solo servidor; configurar también en Vercel Production |
+| `GROQ_TRANSCRIBE_MODEL` | Asistente de voz | Opcional; `whisper-large-v3` por defecto, `whisper-large-v3-turbo` para priorizar velocidad |
 
 Las variables `PUBLIC_*` sí llegan al navegador. El resto son solo de servidor.
 
@@ -231,6 +232,14 @@ scripts/                 seeds de dueño y datos demo
 - Configurar `GROQ_API_KEY` en `.env.local` para desarrollo y en las variables de
   entorno de **Vercel Production** para probar la PWA desplegada. No usar
   `PUBLIC_` ni compartir la clave con el navegador.
+- La captura pide mono con supresión de ruido, cancelación de eco y ganancia
+  automática, graba a 96 kbps y descarta audios de menos de 0,4 s. El servidor
+  envía a Whisper un prompt con los alias de propiedades y nombres de clientes,
+  revisa `no_speech_prob`, `avg_logprob` y `compression_ratio` del formato
+  `verbose_json` y pide repetir cuando la frase es dudosa. El modelo por defecto
+  es `whisper-large-v3`; con `GROQ_TRANSCRIBE_MODEL=whisper-large-v3-turbo` se
+  prioriza la velocidad. En **Ajustes → Voz de Luis** se puede activar el
+  diagnóstico para ver la última frase transcrita.
 - Desde el panel autenticado, tocar el **micrófono flotante**, permitir el micrófono y grabar
   una frase de hasta 20 segundos. El teléfono necesita HTTPS e internet. La
   PWA graba en el formato disponible (MP4 en iPhone o WebM en otros navegadores)
@@ -245,7 +254,8 @@ scripts/                 seeds de dueño y datos demo
   Si hay varios clientes con el mismo nombre, conserva la pregunta, la fecha
   y las propiedades candidatas mientras se aclara cuál de ellas es: se puede
   responder con el alias o «opción uno», «opción dos», etc.
-  No muestra la transcripción: genera la respuesta en el teléfono con Piper y
+  No muestra la transcripción salvo que se active el diagnóstico en
+  **Ajustes → Voz de Luis**: genera la respuesta en el teléfono con Piper y
   después intenta abrir el micrófono para la siguiente respuesta. La voz se
   configura en **Ajustes → Voz de Luis**, por teléfono: Davefx (es_ES,
   masculina, recomendada), Carlfm (más ligera) o una voz instalada en el
@@ -271,7 +281,10 @@ scripts/                 seeds de dueño y datos demo
   [las condiciones de los modelos](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/COMMERCIAL_USE.md)
   antes de actualizar la revisión.
   La escucha se detiene tras silencio, al cerrar la ventana o al pasar la
-  aplicación a segundo plano; no hay escucha permanente.
+  aplicación a segundo plano; no hay escucha permanente. La primera escucha de
+  cada sesión también es automática: tras ~1,3 s sin hablar se envía la frase,
+  y si el teléfono no entrega muestras de audio al analizador se envía igual al
+  llegar al tope de 12 s para no perder la primera petición.
   La visita **no se crea** hasta escuchar la propuesta y decir claramente
   «sí, confirmo»; «cancelar» descarta la propuesta.
   Un «sí» aislado no confirma nada. Si hay varios inmuebles para el nombre

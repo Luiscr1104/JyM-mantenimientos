@@ -1,6 +1,6 @@
 // Para abrir visitas sin internet se guardan únicamente páginas del panel autenticado
 // y recursos estáticos; las respuestas de API y credenciales nunca se cachean.
-const CACHE = 'jym-panel-static-v5';
+const CACHE = 'jym-panel-static-v6';
 const PAGES = 'jym-panel-pages-v3';
 // Los binarios de la voz (wasm + datos de espeak) pesan ~30 MB y no cambian
 // entre versiones de la app; si se borraran al actualizar, se descargarían otra vez.
