@@ -11,6 +11,11 @@ export default defineConfig({
     site: 'https://jymmantenimientos.com',
     output: 'server',
     adapter: vercel(),
+    security: {
+        // Conservar CSRF y confiar solo en el host público que reenvía Vercel.
+        checkOrigin: true,
+        allowedDomains: [{ hostname: 'jymmantenimientos.com' }],
+    },
     vite: {
         plugins: [tailwindcss()],
     },
