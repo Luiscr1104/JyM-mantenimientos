@@ -11,7 +11,9 @@ import {
 
 if (Astro.locals.profile?.role !== 'owner') return Astro.redirect('/panel');
 Astro.response.headers.set('Cache-Control', 'private, no-store');
-Astro.response.headers.set('Referrer-Policy', 'no-referrer');
+// no-referrer puede convertir el Origin de los formularios POST en "null".
+// Conservar el origen interno sin enviar referencias a sitios externos.
+Astro.response.headers.set('Referrer-Policy', 'same-origin');
 const id = z.uuid().safeParse(Astro.params.id);
 if (!id.success) return Astro.redirect('/panel/clientes');
 const data = await getPropertyWithClient(id.data);

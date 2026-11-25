@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { IncomingMessage } from 'node:http';
 import { Socket } from 'node:net';
 import { test } from 'node:test';
@@ -58,5 +59,28 @@ test('no se confía en dominios reenviados arbitrarios ni subdominios parecidos'
         const request = forwardedRequest(`https://${host}`, host);
         assert.notEqual(new URL(request.url).hostname, host);
         assert.equal((await submit(request)).status, 403);
+    }
+});
+
+test('la página de equipos conserva el origen de sus formularios internos', () => {
+    const page = readFileSync('src/pages/panel/propiedades/[id]/equipos.astro', 'utf8');
+    assert.match(page, /headers\.set\('Referrer-Policy', 'same-origin'\)/);
+    assert.doesNotMatch(page, /headers\.set\('Referrer-Policy', 'no-referrer'\)/);
+    assert.match(page, /headers\.set\('Cache-Control', 'private, no-store'\)/);
+});
+
+test('asignar y desvincular admiten el origen interno pero rechazan null y sitios externos', async () => {
+    const propertyId = '11111111-1111-4111-8111-111111111111';
+    const linkId = '22222222-2222-4222-8222-222222222222';
+    for (const path of [
+        `/api/panel/properties/${propertyId}/ewelink`,
+        `/api/panel/properties/${propertyId}/ewelink/${linkId}/unlink`,
+    ]) {
+        for (const [origin, expected] of [
+            [canonical, 200], ['null', 403], ['https://attacker.example', 403],
+        ] as const) {
+            const request = new Request(new URL(path, canonical), forwardedRequest(origin));
+            assert.equal((await submit(request)).status, expected, `${path}: ${origin}`);
+        }
     }
 });
