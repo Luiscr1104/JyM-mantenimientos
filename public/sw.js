@@ -1,7 +1,10 @@
 // Para abrir visitas sin internet se guardan únicamente páginas del panel autenticado
 // y recursos estáticos; las respuestas de API y credenciales nunca se cachean.
-const CACHE = 'jym-panel-static-v4';
+const CACHE = 'jym-panel-static-v5';
 const PAGES = 'jym-panel-pages-v3';
+// Los binarios de la voz (wasm + datos de espeak) pesan ~30 MB y no cambian
+// entre versiones de la app; si se borraran al actualizar, se descargarían otra vez.
+const PIPER = 'jym-piper-assets-v1';
 const READY = '/panel/offline-ready';
 const NAVIGATION_WAIT = 2500;
 const dateFormat = new Intl.DateTimeFormat('en-US', {
@@ -25,7 +28,8 @@ self.addEventListener('activate', (event) => {
     event.waitUntil(Promise.all([
         caches.keys().then((keys) =>
             Promise.all(keys.filter((key) => (key.startsWith('jym-panel-static-') && key !== CACHE) ||
-                (key.startsWith('jym-panel-pages-') && key !== PAGES))
+                (key.startsWith('jym-panel-pages-') && key !== PAGES) ||
+                (key.startsWith('jym-piper-assets-') && key !== PIPER))
                 .map((key) => caches.delete(key)))),
         self.clients.claim(),
     ]));
@@ -86,6 +90,21 @@ self.addEventListener('fetch', (event) => {
                     <a href="/panel">Ir a Hoy</a> · <a href="">Reintentar</a></body></html>`,
                     { status: 503, headers: { 'content-type': 'text/html; charset=utf-8' } });
             }
+        })());
+        return;
+    }
+    if (path.startsWith('/piper/')) {
+        event.respondWith((async () => {
+            const cache = await caches.open(PIPER).catch(() => null);
+            const cached = await cache?.match(request).catch(() => null);
+            if (cached) return cached;
+            const response = await fetch(request);
+            if (cache && response.ok) {
+                const copy = response.clone();
+                event.waitUntil(cache.put(request, copy)
+                    .catch((error) => console.warn('No se pudo guardar la voz offline:', error)));
+            }
+            return response;
         })());
         return;
     }

@@ -6,6 +6,8 @@ import {
     requestedWeek, spokenDate, spokenWeek, voiceConfirmation, weekContaining, type VoiceIntent,
 } from '../src/lib/voice-assistant';
 import { preferredSpanishVoice } from '../src/lib/voice-preferences';
+import { resolveVoice } from '../src/lib/voice-settings';
+import { splitSentences } from '../src/lib/piper-player';
 import { reminderSchedule } from '../src/lib/personal-reminders';
 import { monthForQuestion, pastVisitSelection, visitMinutes, weekForDuration } from '../src/lib/assistant-visit-read';
 
@@ -101,6 +103,21 @@ test('selecciona voz masculina española conocida y no atribuye género a una vo
     assert.equal(preferredSpanishVoice([voices[0]]), undefined);
 });
 
+test('respeta la voz guardada y no cae en Mónica si ya no existe', () => {
+    const voices = [
+        { voiceURI: 'com.apple.voice.compact.es-ES.Monica', name: 'Mónica', lang: 'es-ES' },
+        { voiceURI: 'com.apple.voice.enhanced.es-ES.Jorge', name: 'Jorge', lang: 'es-ES' },
+    ];
+    const saved = { choice: 'device' as const, uri: 'com.apple.voice.enhanced.es-ES.Jorge', name: 'Jorge', lang: 'es-ES' };
+    assert.equal(resolveVoice(voices, saved), voices[1]);
+    // iOS puede cambiar la URI entre sesiones: el nombre sigue sirviendo.
+    assert.equal(resolveVoice(voices, { ...saved, uri: 'jorge-renombrado' }), voices[1]);
+    // Una preferencia explícita que desapareció no debe sustituirse por Mónica.
+    assert.equal(resolveVoice(voices, { ...saved, uri: 'otra', name: 'Desconocida' }), undefined);
+    // Sin preferencia guardada, se elige la masculina conocida.
+    assert.equal(resolveVoice(voices, { choice: 'device', uri: '', name: '', lang: '' }), voices[1]);
+});
+
 test('recordatorios sin hora se ven hoy; con hora se programan solo si no pasó en Costa Rica', () => {
     const now = new Date('2026-11-24T16:00:00Z'); // 10 a.m. en Costa Rica
     assert.deepEqual(reminderSchedule('recuérdame comprar concentrado para Negro', '2026-11-24', now),
@@ -187,6 +204,7 @@ test('la confirmación hablada exige una frase inequívoca', () => {
 test('la voz propone antes de crear; el servidor también valida la confirmación', () => {
     const server = readFileSync('src/server/voice-assistant.ts', 'utf8');
     const ui = readFileSync('src/components/panel/VoiceConversation.tsx', 'utf8');
+    const device = readFileSync('src/lib/device-voice.ts', 'utf8');
     assert.match(server, /return \{\s*kind: 'preview'/);
     assert.match(server, /voiceConfirmation\(confirmation\) !== 'confirm'/);
     assert.match(server, /await createVisit\(/);
@@ -199,10 +217,33 @@ test('la voz propone antes de crear; el servidor también valida la confirmació
     assert.match(server, /signedToken\(\{ \.\.\.context, candidateIds:/);
     assert.doesNotMatch(server, /listPropertyProducts\(/);
     assert.match(ui, /previewHeardRef\.current/);
-    assert.match(ui, /speechSynthesis\.speak\(utterance\)/);
-    assert.match(ui, /utterance\.onend[\s\S]+startRecording\(false, true\)/);
+    assert.match(device, /synth\.speak\(utterance\)/);
+    assert.match(device, /utterance\.onend/);
+    assert.match(ui, /piperPlayer\.speak\(/);
+    assert.match(ui, /\/panel\/ajustes#voz/);
+    assert.match(ui, /startRecording\(false, true\)/);
     assert.match(ui, /contextRef\.current = answer\.contextToken/);
     assert.match(ui, /postJson\('\/api\/panel\/assistant\/confirm', \{ token, confirmation \}\)/);
     assert.doesNotMatch(ui, /<textarea|answer\.message\}<\/p>/);
     assert.match(ui, /MediaRecorder\.isTypeSupported/);
+});
+
+test('divide la respuesta en frases para empezar a hablar antes', () => {
+    assert.deepEqual(splitSentences('Hola. ¿Cómo estás? Bien'), ['Hola.', '¿Cómo estás?', 'Bien']);
+    assert.deepEqual(splitSentences('   '), []);
+    const long = splitSentences('palabra '.repeat(80));
+    assert.ok(long.length > 1);
+    assert.ok(long.every((chunk) => chunk.length <= 220));
+});
+
+test('la voz Piper se cachea en el teléfono y usa recursos locales', () => {
+    const worker = readFileSync('src/lib/piper-voice.worker.ts', 'utf8');
+    const player = readFileSync('src/lib/piper-player.ts', 'utf8');
+    assert.match(worker, /PIPER_CACHE/);
+    assert.match(worker, /caches\.open/);
+    assert.match(worker, /wasmPaths = assetBase/);
+    assert.match(worker, /chain\.then/);
+    assert.match(worker, /'--input', JSON\.stringify\(\[\{ text \}\]\)/);
+    assert.match(player, /splitSentences/);
+    assert.match(player, /markPiperReady/);
 });

@@ -4,6 +4,7 @@ import PageHeader from '@/components/panel/PageHeader.astro';
 import SettingsForm from '@/components/panel/SettingsForm';
 import PushSettings from '@/components/panel/PushSettings';
 import InstallApp from '@/components/panel/InstallApp';
+import VoiceSettings from '@/components/panel/VoiceSettings';
 import { getSettings } from '@/server/settings';
 import { getNotificationRecipientIds, getNotificationUserId } from '@/server/push-reminders';
 import { PUBLIC_VAPID_PUBLIC_KEY } from 'astro:env/client';
@@ -39,6 +40,7 @@ const error = Astro.url.searchParams.get('error');
         </section>
 
         <div class="space-y-4">
+            <VoiceSettings client:load />
             <InstallApp client:load />
             {Astro.locals.profile?.role === 'owner' && (
                 <a href="/panel/ewelink" class="block rounded-2xl border border-slate-200 bg-white p-5 text-sm font-bold text-sky-800 underline shadow-sm">

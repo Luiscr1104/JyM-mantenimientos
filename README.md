@@ -245,12 +245,31 @@ scripts/                 seeds de dueño y datos demo
   Si hay varios clientes con el mismo nombre, conserva la pregunta, la fecha
   y las propiedades candidatas mientras se aclara cuál de ellas es: se puede
   responder con el alias o «opción uno», «opción dos», etc.
-  No muestra la transcripción: intenta hablar automáticamente con la voz del
-  teléfono y después abrir el micrófono para la siguiente respuesta. Prioriza
-  voces masculinas conocidas en español y permite elegir entre las voces
-  instaladas. El navegador no informa el género: si el teléfono no ofrece
-  una voz masculina española, hay que instalarla o elegir otra manualmente.
-  Si iOS bloquea el audio o el micrófono, tocar el altavoz o micrófono como respaldo.
+  No muestra la transcripción: genera la respuesta en el teléfono con Piper y
+  después intenta abrir el micrófono para la siguiente respuesta. La voz se
+  configura en **Ajustes → Voz de Luis**, por teléfono: Davefx (es_ES,
+  masculina, recomendada), Carlfm (más ligera) o una voz instalada en el
+  teléfono. La misma voz Piper se usa en iPhone y Android. La primera vez
+  descarga el modelo ONNX y los recursos WebAssembly (≈93 MB Davefx, ≈58 MB
+  Carlfm) con progreso visible; queda guardada en el teléfono y «Borrar
+  descarga» libera ese espacio. No emplea una API de voz de pago. En el
+  asistente, la primera apertura pide descargar la voz, con la opción de usar
+  la del teléfono, para no iniciar una descarga grande sin avisar.
+  Los binarios de Piper se copian a `public/piper/` al ejecutar `pnpm dev` o
+  `pnpm build`; no se versionan en el repositorio.
+  Apple no permite usar las voces de Siri en aplicaciones web: si se instala
+  una, el sistema ofrecerá otra (por ejemplo Mónica). Para usar una voz del
+  teléfono hay que descargarla en Ajustes → Accesibilidad → Contenido leído →
+  Voces → Español y luego tocar «Actualizar lista»; puede hacer falta cerrar
+  y abrir la app. Si iOS bloquea el audio o el micrófono, tocar el altavoz o
+  micrófono como respaldo. La prueba real de rendimiento y reproducción en
+  ambos teléfonos está pendiente.
+  Davefx usa la revisión `5ec43b186ef915a195d3ddbcfd9916e76c503c3f`
+  de [Piper Voices](https://huggingface.co/rhasspy/piper-voices); no sustituir
+  por pesos anteriores del mismo nombre: su cadena de entrenamiento no tenía
+  los mismos permisos. Conservar su `MODEL_CARD` y comprobar
+  [las condiciones de los modelos](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/COMMERCIAL_USE.md)
+  antes de actualizar la revisión.
   La escucha se detiene tras silencio, al cerrar la ventana o al pasar la
   aplicación a segundo plano; no hay escucha permanente.
   La visita **no se crea** hasta escuchar la propuesta y decir claramente

@@ -1,7 +1,13 @@
 import * as React from 'react';
 import { AlertCircle, LoaderCircle, Mic, Square, Volume2, X } from 'lucide-react';
 import { voiceConfirmation } from '@/lib/voice-assistant';
-import { preferredSpanishVoice } from '@/lib/voice-preferences';
+import { listSpanishVoices, primeDeviceSpeech, speakDeviceVoice, speechSupported } from '@/lib/device-voice';
+import { piperPlayer } from '@/lib/piper-player';
+import { PIPER_DOWNLOAD_MB, PIPER_LABEL } from '@/lib/piper-protocol';
+import {
+    DEFAULT_VOICE_SETTINGS, piperReady, readVoiceSettings, resolveVoice, writeVoiceSettings,
+    type VoiceSettings,
+} from '@/lib/voice-settings';
 
 type Answer = {
     kind: 'message' | 'preview' | 'clarification';
@@ -31,14 +37,16 @@ export default function VoiceConversation() {
     const [status, setStatus] = React.useState('');
     const [needsReplay, setNeedsReplay] = React.useState(false);
     const [hasAnswer, setHasAnswer] = React.useState(false);
-    const [voices, setVoices] = React.useState<SpeechSynthesisVoice[]>([]);
-    const [voiceURI, setVoiceURI] = React.useState('');
+    const [settings, setSettings] = React.useState<VoiceSettings>(DEFAULT_VOICE_SETTINGS);
+    const [deviceLabel, setDeviceLabel] = React.useState('');
+    const [needsSetup, setNeedsSetup] = React.useState(false);
+    const settingsRef = React.useRef<VoiceSettings>(DEFAULT_VOICE_SETTINGS);
     const recorderRef = React.useRef<MediaRecorder | null>(null);
     const streamRef = React.useRef<MediaStream | null>(null);
     const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const autoTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const stopDetectorRef = React.useRef<(() => void) | null>(null);
-    const speechTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const deviceCancelRef = React.useRef<(() => void) | null>(null);
     const sessionRef = React.useRef(0);
     const speechRef = React.useRef(0);
     const activeRef = React.useRef(false);
@@ -66,8 +74,9 @@ export default function VoiceConversation() {
         speechRef.current++;
         if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
         autoTimerRef.current = null;
-        if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
-        speechTimerRef.current = null;
+        deviceCancelRef.current?.();
+        deviceCancelRef.current = null;
+        piperPlayer.stop();
         window.speechSynthesis?.cancel();
     }
 
@@ -80,30 +89,23 @@ export default function VoiceConversation() {
         previewSpeechRef.current = null;
         stopRecording();
         stopSpeech();
+        setNeedsSetup(false);
         setPhase('idle');
         setOpen(false);
     }
 
     React.useEffect(() => {
+        const initial = readVoiceSettings();
+        settingsRef.current = initial;
+        setSettings(initial);
+        setDeviceLabel(resolveVoice(listSpanishVoices(), initial)?.name ?? '');
         const onHidden = () => { if (document.visibilityState === 'hidden') close(); };
+        const onPageHide = () => piperPlayer.dispose();
         document.addEventListener('visibilitychange', onHidden);
-        if ('speechSynthesis' in window) {
-            try { setVoiceURI(localStorage.getItem('jym-voice-uri') ?? ''); } catch { /* Sin almacenamiento. */ }
-            const updateVoices = () => setVoices(window.speechSynthesis.getVoices()
-                .filter(({ lang }) => /^es(?:-|$)/i.test(lang)));
-            updateVoices();
-            window.speechSynthesis.addEventListener('voiceschanged', updateVoices);
-            return () => {
-                window.speechSynthesis.removeEventListener('voiceschanged', updateVoices);
-                document.removeEventListener('visibilitychange', onHidden);
-                activeRef.current = false;
-                sessionRef.current++;
-                stopRecording();
-                stopSpeech();
-            };
-        }
+        window.addEventListener('pagehide', onPageHide);
         return () => {
             document.removeEventListener('visibilitychange', onHidden);
+            window.removeEventListener('pagehide', onPageHide);
             activeRef.current = false;
             sessionRef.current++;
             stopRecording();
@@ -111,77 +113,85 @@ export default function VoiceConversation() {
         };
     }, []);
 
-    // Se inicia en el gesto del botón: ayuda a iOS a autorizar la voz tras una petición asíncrona.
     function primeSpeech() {
-        if (!('speechSynthesis' in window)) return;
-        try {
-            window.speechSynthesis.cancel();
-            const silent = new SpeechSynthesisUtterance(' ');
-            silent.volume = 0;
-            window.speechSynthesis.speak(silent);
-        } catch { /* Si iOS lo bloquea, el botón de repetir permite otro gesto. */ }
+        primeDeviceSpeech(settingsRef.current);
     }
 
-    function speak(message: string, previewToken?: string, reListen = true) {
+    function speak(message: string, previewToken?: string, reListen = true, visible = false) {
         lastSpokenRef.current = { message, previewToken, reListen };
         setHasAnswer(true);
-        setStatus(message);
+        setStatus(visible ? message : '');
         stopSpeech();
         const session = sessionRef.current;
         const speechId = speechRef.current;
-        if (!('speechSynthesis' in window)) {
-            setNeedsReplay(true);
-            setPhase('idle');
-            return;
-        }
-        setNeedsReplay(false);
-        setPhase('speaking');
-        let started = false;
-        const utterance = new SpeechSynthesisUtterance(message);
-        const available = window.speechSynthesis.getVoices().filter(({ lang }) => /^es(?:-|$)/i.test(lang));
-        const voice = available.find((item) => item.voiceURI === voiceURI) ??
-            preferredSpanishVoice(available) ?? available[0];
-        if (voice) utterance.voice = voice;
-        utterance.lang = voice?.lang ?? 'es-ES';
-        utterance.rate = 0.94;
         const current = () => activeRef.current && sessionRef.current === session && speechRef.current === speechId;
-        utterance.onstart = () => { started = true; };
-        utterance.onend = () => {
+        const finished = () => {
             if (!current()) return;
-            if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
-            speechTimerRef.current = null;
+            if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
             if (previewToken && pendingRef.current === previewToken) previewHeardRef.current = true;
             setNeedsReplay(false);
             setPhase('idle');
             if (reListen && document.visibilityState === 'visible' && navigator.onLine) {
-                // Dejar que iOS libere la salida de audio antes de abrir la entrada.
                 autoTimerRef.current = setTimeout(() => {
                     if (current() && document.visibilityState === 'visible') void startRecording(false, true);
                 }, 450);
             }
         };
-        utterance.onerror = () => {
+        const failed = () => {
             if (!current()) return;
-            if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
-            speechTimerRef.current = null;
             setNeedsReplay(true);
             setPhase('idle');
         };
-        try {
-            window.speechSynthesis.resume();
-            window.speechSynthesis.speak(utterance);
-            speechTimerRef.current = setTimeout(() => {
-                if (!current() || started) return;
-                stopSpeech();
-                setNeedsReplay(true);
-                setPhase('idle');
-            }, 6_000);
-        } catch {
-            if (current()) {
-                setNeedsReplay(true);
-                setPhase('idle');
-            }
+        setNeedsReplay(false);
+        setPhase('speaking');
+
+        if (settingsRef.current.choice !== 'device') {
+            const choice = settingsRef.current.choice;
+            piperPlayer.speak(message, choice, {
+                onProgress: ({ loaded, total }) => {
+                    if (!current() || !total) return;
+                    setStatus(`Descargando la voz: ${Math.min(100, Math.round((loaded / total) * 100))} %`);
+                },
+                onEnd: finished,
+                onError: (error) => {
+                    if (!current()) return;
+                    setStatus(error);
+                    failed();
+                },
+            });
+            return;
         }
+
+        if (!speechSupported()) {
+            failed();
+            return;
+        }
+        const voices = listSpanishVoices();
+        const resolved = resolveVoice(voices, settingsRef.current);
+        const explicit = Boolean(settingsRef.current.uri || settingsRef.current.name);
+        if (explicit && !resolved) {
+            // Una preferencia guardada que desapareció no debe terminar en
+            // Mónica sin avisar: mejor pedir que se elija otra voz.
+            setStatus('La voz que elegiste ya no está en este teléfono. Elige otra en Ajustes o descarga la voz de Luis.');
+            failed();
+            return;
+        }
+        deviceCancelRef.current = speakDeviceVoice(message, settingsRef.current, {
+            onEnd: finished,
+            onError: () => failed(),
+        });
+    }
+
+    /** Avisos operativos (micrófono, red): no deben disparar una descarga de 93 MB. */
+    function announce(message: string) {
+        const choice = settingsRef.current.choice;
+        if (choice === 'device' || piperReady(choice)) {
+            speak(message, undefined, false, true);
+            return;
+        }
+        stopSpeech();
+        setPhase('idle');
+        setStatus(message);
     }
 
     function deliver(answer: Answer) {
@@ -216,7 +226,7 @@ export default function VoiceConversation() {
             if (activeRef.current && sessionRef.current === session) deliver(result);
         } catch (reason) {
             if (activeRef.current && sessionRef.current === session) {
-                speak(reason instanceof Error ? reason.message : 'No se pudo crear la visita. Vuelve a pedirla.', undefined, false);
+                speak(reason instanceof Error ? reason.message : 'No se pudo crear la visita. Vuelve a pedirla.', undefined, false, true);
             }
         }
     }
@@ -234,12 +244,12 @@ export default function VoiceConversation() {
                 speak('Cancelado. No se creó ninguna visita.');
             } else if (decision === 'confirm') {
                 if (!previewHeardRef.current) {
-                    speak('Antes de confirmar, toca el altavoz para escuchar la visita propuesta.', undefined, false);
+                    speak('Antes de confirmar, toca el altavoz para escuchar la visita propuesta.', undefined, false, true);
                 } else {
                     await confirm(token, text, session);
                 }
             } else {
-                speak('Para esta visita, di: sí confirmo, o: cancelar. Si deseas otra petición, cancela primero.');
+                speak('Para esta visita, di: sí confirmo, o: cancelar. Si deseas otra petición, cancela primero.', undefined, true, true);
             }
             return;
         }
@@ -257,7 +267,7 @@ export default function VoiceConversation() {
         } catch (reason) {
             if (activeRef.current && sessionRef.current === session) {
                 contextRef.current = null;
-                speak(reason instanceof Error ? reason.message : 'No pude entenderte. Inténtalo de nuevo.', undefined, false);
+                speak(reason instanceof Error ? reason.message : 'No pude entenderte. Inténtalo de nuevo.', undefined, false, true);
             }
         }
     }
@@ -265,7 +275,7 @@ export default function VoiceConversation() {
     async function sendAudio(blob: Blob, mimeType: string, session: number) {
         if (!activeRef.current || sessionRef.current !== session) return;
         if (blob.size < 100 || blob.size > 2_000_000) {
-            speak('La grabación quedó vacía o es demasiado larga. Vuelve a intentarlo.', undefined, false);
+            speak('La grabación quedó vacía o es demasiado larga. Vuelve a intentarlo.', undefined, false, true);
             return;
         }
         setPhase('processing');
@@ -282,7 +292,7 @@ export default function VoiceConversation() {
             if (activeRef.current && sessionRef.current === session) await handleSpeech(data.text, session);
         } catch (reason) {
             if (activeRef.current && sessionRef.current === session) {
-                speak(reason instanceof Error ? reason.message : 'No pude escuchar tu frase. Inténtalo de nuevo.', undefined, false);
+                speak(reason instanceof Error ? reason.message : 'No pude escuchar tu frase. Inténtalo de nuevo.', undefined, false, true);
             }
         }
     }
@@ -341,11 +351,11 @@ export default function VoiceConversation() {
         if (!preservePrime) stopSpeech();
         setNeedsReplay(false);
         if (!navigator.onLine) {
-            speak('Para usar el asistente de voz necesitas conexión a internet.', undefined, false);
+            announce('Para usar el asistente de voz necesitas conexión a internet.');
             return;
         }
         if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-            speak('Este navegador no permite grabar audio desde la aplicación.', undefined, false);
+            announce('Este navegador no permite grabar audio desde la aplicación.');
             return;
         }
         setPhase('starting');
@@ -366,7 +376,9 @@ export default function VoiceConversation() {
             recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
             recorder.onerror = () => {
                 stopRecording();
-                if (activeRef.current && sessionRef.current === session) speak('La grabación falló. Inténtalo de nuevo.', undefined, false);
+                if (activeRef.current && sessionRef.current === session) {
+                    announce('La grabación falló. Inténtalo de nuevo.');
+                }
             };
             recorder.onstop = () => {
                 const blob = new Blob(chunks, { type: recorder.mimeType || mimeType });
@@ -397,14 +409,68 @@ export default function VoiceConversation() {
         } catch (reason) {
             stopRecording();
             if (activeRef.current && sessionRef.current === session) {
-                speak(reason instanceof Error && reason.name === 'NotAllowedError'
+                announce(reason instanceof Error && reason.name === 'NotAllowedError'
                     ? 'Permite el acceso al micrófono para esta aplicación en los ajustes del teléfono.'
-                    : reason instanceof Error ? reason.message : 'No pude abrir el micrófono.', undefined, false);
+                    : reason instanceof Error ? reason.message : 'No pude abrir el micrófono.');
             }
         }
     }
 
+    function beginListening() {
+        if (settingsRef.current.choice === 'device') primeSpeech();
+        else piperPlayer.unlock();
+        void startRecording(true);
+    }
+
+    function downloadVoice() {
+        const choice = settingsRef.current.choice;
+        if (choice === 'device') return;
+        const session = sessionRef.current;
+        piperPlayer.unlock();
+        setNeedsSetup(false);
+        setNeedsReplay(false);
+        setPhase('starting');
+        setStatus('Descargando la voz: 0 %');
+        piperPlayer.preload(choice, ({ loaded, total }) => {
+            if (!activeRef.current || sessionRef.current !== session || !total) return;
+            setStatus(`Descargando la voz: ${Math.min(100, Math.round((loaded / total) * 100))} %`);
+        }).then(() => {
+            if (!activeRef.current || sessionRef.current !== session) return;
+            piperPlayer.speak('Hola, soy Luis. Te ayudaré con las visitas y los recordatorios.', choice, {
+                onStart: () => { if (sessionRef.current === session) setPhase('speaking'); },
+                onEnd: () => { if (activeRef.current && sessionRef.current === session) void startRecording(true); },
+                onError: (error) => {
+                    if (!activeRef.current || sessionRef.current !== session) return;
+                    setNeedsSetup(true);
+                    setNeedsReplay(true);
+                    setPhase('idle');
+                    setStatus(error);
+                },
+            });
+        }).catch((reason: unknown) => {
+            if (!activeRef.current || sessionRef.current !== session) return;
+            setNeedsSetup(true);
+            setNeedsReplay(true);
+            setPhase('idle');
+            setStatus(reason instanceof Error ? reason.message : 'No se pudo descargar la voz.');
+        });
+    }
+
+    function useDeviceVoice() {
+        const next = writeVoiceSettings({ choice: 'device' });
+        settingsRef.current = next;
+        setSettings(next);
+        setDeviceLabel(resolveVoice(listSpanishVoices(), next)?.name ?? '');
+        setNeedsSetup(false);
+        setStatus('');
+        beginListening();
+    }
+
     function openAssistant() {
+        const initial = readVoiceSettings();
+        settingsRef.current = initial;
+        setSettings(initial);
+        setDeviceLabel(resolveVoice(listSpanishVoices(), initial)?.name ?? '');
         activeRef.current = true;
         sessionRef.current++;
         pendingRef.current = null;
@@ -413,10 +479,21 @@ export default function VoiceConversation() {
         previewSpeechRef.current = null;
         lastSpokenRef.current = null;
         setHasAnswer(false);
+        setNeedsReplay(false);
+        setStatus('');
         setOpen(true);
-        primeSpeech();
-        void startRecording(true);
+        if (initial.choice !== 'device' && !piperReady(initial.choice)) {
+            setNeedsSetup(true);
+            setPhase('idle');
+            return;
+        }
+        setNeedsSetup(false);
+        beginListening();
     }
+
+    const voiceName = settings.choice === 'device'
+        ? deviceLabel || 'la del teléfono'
+        : `${PIPER_LABEL[settings.choice]} (Piper)`;
 
     return (
         <>
@@ -447,45 +524,68 @@ export default function VoiceConversation() {
                                         : <Mic className="h-7 w-7" />}
                         </div>
                     </div>
-                    <p className="mb-4 text-sm font-bold text-slate-800">Luis <span className="font-normal text-slate-500">· asistente virtual</span></p>
-                    {voices.length > 0 && <div className="mx-auto mb-4 max-w-xs text-left">
-                        <label htmlFor="luis-voice" className="mb-1 block text-xs font-semibold text-slate-700">Voz de Luis</label>
-                        <select id="luis-voice" value={voiceURI || preferredSpanishVoice(voices)?.voiceURI || voices[0].voiceURI}
-                            disabled={phase === 'speaking' || phase === 'recording' || phase === 'processing'}
-                            onChange={(event) => {
-                                setVoiceURI(event.target.value);
-                                try { localStorage.setItem('jym-voice-uri', event.target.value); } catch { /* Sin almacenamiento. */ }
-                            }}
-                            className="w-full rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-700">
-                            {voices.map((voice) => <option key={voice.voiceURI} value={voice.voiceURI}>
-                                {voice.name} ({voice.lang})
-                            </option>)}
-                        </select>
-                        {!voiceURI && !preferredSpanishVoice(voices) && <p className="mt-1 text-xs text-amber-800">
-                            Este teléfono no identifica una voz masculina en español. Puedes elegir otra voz instalada.
-                        </p>}
-                    </div>}
-                    <p role="status" aria-live="polite" className="sr-only">{status}</p>
-                    <div className="flex items-center justify-center gap-5 pb-4">
-                        <button type="button" disabled={phase === 'processing' || phase === 'starting' || phase === 'speaking'}
-                            onClick={() => phase === 'recording' ? recorderRef.current?.stop() : void startRecording()}
-                            aria-label={phase === 'recording' ? 'Detener grabación' : 'Hablar de nuevo'}
-                            className="flex h-16 w-16 items-center justify-center rounded-full bg-sky-700 text-white shadow-md disabled:opacity-40">
-                            {phase === 'recording' ? <Square className="h-6 w-6" aria-hidden="true" /> :
-                                <Mic className="h-7 w-7" aria-hidden="true" />}
-                        </button>
-                        {hasAnswer && <button type="button" disabled={phase !== 'idle'}
-                            onClick={() => {
-                                const preview = previewSpeechRef.current;
-                                const last = lastSpokenRef.current;
-                                if (preview && !previewHeardRef.current) speak(preview.message, preview.token);
-                                else if (last) speak(last.message, last.previewToken, last.reListen);
-                            }}
-                            aria-label="Repetir respuesta en voz alta"
-                            className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-sky-200 text-sky-800 disabled:opacity-40">
-                            <Volume2 className="h-6 w-6" aria-hidden="true" />
-                        </button>}
+                    <p className="mb-3 text-sm font-bold text-slate-800">Luis <span className="font-normal text-slate-500">· asistente virtual</span></p>
+
+                    <div className="mx-auto mb-3 flex max-w-xs items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-left text-xs">
+                        <span className="text-slate-600">Voz: <strong className="text-slate-800">{voiceName}</strong></span>
+                        <a href="/panel/ajustes#voz" onClick={close}
+                            className="font-semibold text-sky-800 underline">Cambiar</a>
                     </div>
+
+                    <p role="status" aria-live="polite"
+                        className={`mx-auto mb-3 min-h-[1rem] max-w-xs text-xs ${needsReplay ? 'text-amber-800' : 'text-slate-600'}`}>
+                        {status}
+                    </p>
+
+                    {needsSetup ? <div className="mx-auto mb-2 max-w-xs rounded-xl border border-sky-200 bg-sky-50 p-3 text-left">
+                        <p className="text-xs font-bold text-sky-900">Preparar la voz masculina</p>
+                        <p className="mt-1 text-xs text-slate-600">
+                            Se descarga una sola vez (~{settings.choice === 'device' ? 0 : PIPER_DOWNLOAD_MB[settings.choice]} MB)
+                            y queda guardada en este teléfono.
+                        </p>
+                        <button type="button" onClick={downloadVoice}
+                            className="mt-2 w-full rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold text-white">
+                            Descargar y probar
+                        </button>
+                        <button type="button" onClick={useDeviceVoice}
+                            className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+                            Usar la voz del teléfono
+                        </button>
+                        <a href="/panel/ajustes#voz" onClick={close}
+                            className="mt-2 block text-center text-xs font-semibold text-sky-800 underline">
+                            Elegir en Ajustes
+                        </a>
+                    </div> : <>
+                        {phase === 'idle' && !pendingRef.current && <button type="button"
+                            onClick={() => {
+                                if (settings.choice === 'device') primeSpeech();
+                                else piperPlayer.unlock();
+                                speak('Hola, soy Luis. Te ayudaré con las visitas y los recordatorios.', undefined, false);
+                            }}
+                            className="mb-3 rounded-lg border border-sky-200 px-3 py-2 text-xs font-semibold text-sky-800">
+                            Probar voz
+                        </button>}
+                        <div className="flex items-center justify-center gap-5 pb-4">
+                            <button type="button" disabled={phase === 'processing' || phase === 'starting' || phase === 'speaking'}
+                                onClick={() => phase === 'recording' ? recorderRef.current?.stop() : void startRecording()}
+                                aria-label={phase === 'recording' ? 'Detener grabación' : 'Hablar de nuevo'}
+                                className="flex h-16 w-16 items-center justify-center rounded-full bg-sky-700 text-white shadow-md disabled:opacity-40">
+                                {phase === 'recording' ? <Square className="h-6 w-6" aria-hidden="true" /> :
+                                    <Mic className="h-7 w-7" aria-hidden="true" />}
+                            </button>
+                            {hasAnswer && <button type="button" disabled={phase !== 'idle'}
+                                onClick={() => {
+                                    const preview = previewSpeechRef.current;
+                                    const last = lastSpokenRef.current;
+                                    if (preview && !previewHeardRef.current) speak(preview.message, preview.token);
+                                    else if (last) speak(last.message, last.previewToken, last.reListen);
+                                }}
+                                aria-label="Repetir respuesta en voz alta"
+                                className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-sky-200 text-sky-800 disabled:opacity-40">
+                                <Volume2 className="h-6 w-6" aria-hidden="true" />
+                            </button>}
+                        </div>
+                    </>}
                 </section>
             </div>}
         </>

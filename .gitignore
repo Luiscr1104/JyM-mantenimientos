@@ -1,5 +1,7 @@
 # build output
 dist/
+# binarios de Piper copiados por scripts/copy-piper-assets.mjs
+public/piper/
 # generated types
 .astro/
 # vercel

@@ -267,6 +267,8 @@ test('la jornada solo figura lista si existen Hoy, Ruta, visitas y recursos', as
         ports: Array<{ postMessage: (data: any) => void }>;
         waitUntil: (job: Promise<unknown>) => void;
     };
+    // La versión de la caché cambia al actualizar el shell: se lee del propio SW.
+    const cacheName = /const CACHE = '([^']+)'/.exec(readFileSync('public/sw.js', 'utf8'))![1];
     const handlers = new Map<string, (event: MessageEvent) => void>();
     const stores = new Map<string, Map<string, Response>>();
     const cache = (name: string) => {
@@ -314,7 +316,7 @@ test('la jornada solo figura lista si existen Hoy, Ruta, visitas y recursos', as
     assert.equal((await send('offline-status', [])).ready, false);
     assert.equal((await send('prefetch-visits', [])).ok, true);
     assert.equal((await send('offline-status', [])).ready, true);
-    stores.get('jym-panel-static-v4')!.delete('/_astro/campo.js');
+    stores.get(cacheName)!.delete('/_astro/campo.js');
     assert.equal((await send('offline-status', [])).ready, false);
 });
 
